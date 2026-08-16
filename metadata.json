@@ -1,0 +1,6 @@
+{
+  "name": "You",
+  "description": "Health and fitness tracker, exact clone",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
