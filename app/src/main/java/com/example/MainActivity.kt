@@ -26,6 +26,9 @@ import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.TodayScreen
 import com.example.ui.screens.TalkScreen
 import com.example.ui.screens.FaceScreen
+import com.example.ui.screens.FaceScanScreen
+import com.example.ui.screens.FaceScanResultScreen
+import com.example.ui.screens.FaceHistoryScreen
 import com.example.ui.screens.LiveSessionScreen
 import com.example.ui.screens.OnboardingScreen
 import com.example.data.SettingsManager
@@ -128,7 +131,7 @@ fun MainScreen(startDestination: String = "home") {
                             onNavigateToLiveSession = { exId -> navController.navigate("liveSession/$exId") }
                         )
                     } else {
-                        DashboardScreen()
+                        DashboardScreen(onNavigateToFaceScan = { navController.navigate("faceScan") })
                     }
                 }
             }
@@ -170,6 +173,28 @@ fun MainScreen(startDestination: String = "home") {
         
         composable("weeklyReview") {
             WeeklyReviewScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable("faceScan") {
+            FaceScanScreen(
+                onCaptured = {
+                    navController.navigate("faceScanResult") {
+                        popUpTo("faceScan") { inclusive = true }
+                    }
+                },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable("faceScanResult") {
+            FaceScanResultScreen(
+                onBack = { navController.popBackStack("home", inclusive = false) },
+                onViewHistory = { navController.navigate("faceHistory") },
+            )
+        }
+
+        composable("faceHistory") {
+            FaceHistoryScreen(onBack = { navController.popBackStack() })
         }
     }
 }
