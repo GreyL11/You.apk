@@ -15,4 +15,5 @@ local.properties
 *.jks
 .env
 .env.*
+!.env.example
 secrets.properties
