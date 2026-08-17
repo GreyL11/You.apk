@@ -34,6 +34,11 @@ class FaceAnalyzer(private val onResult: (faceCount: Int, metrics: FaceMetrics?)
                 } else {
                     val box = faces[0].boundingBox
                     val (luma, sharpness, clipFraction) = sampleLumaMetrics(imageProxy)
+                    android.util.Log.d(
+                        "FaceAnalyzer",
+                        "size=${"%.3f".format((box.width().toDouble() * box.height()) / (w.toDouble() * h))} " +
+                            "sharpness=${"%.5f".format(sharpness)} luma=${"%.3f".format(luma)} clip=${"%.4f".format(clipFraction)}",
+                    )
                     onResult(
                         1,
                         FaceMetrics(
