@@ -28,7 +28,6 @@ import kotlin.math.roundToInt
 
 @Composable
 fun DashboardScreen(
-    onNavigateToFaceScan: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.getInstance(LocalContext.current.applicationContext as Application))
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -107,35 +106,6 @@ fun DashboardScreen(
             }
         }
         
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Text(
-            text = "FACE & SKIN",
-            style = MaterialTheme.typography.labelMedium,
-            color = Color.White.copy(alpha = 0.7f),
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.5.sp
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Card(
-            modifier = Modifier.fillMaxWidth().clickable { onNavigateToFaceScan() },
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF161920)),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Guided Face Scan", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Check capture quality and track real scan history.", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall)
-                }
-                Text("→", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.headlineSmall)
-            }
-        }
-
         Spacer(modifier = Modifier.height(48.dp))
     }
 }
