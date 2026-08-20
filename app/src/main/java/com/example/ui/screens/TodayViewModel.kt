@@ -111,6 +111,23 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 allWeights.filter { it.at >= windowStart }.map { it.at to it.kg },
             )
             val nutritionCoachLine = Nutrition.coachLine(profile, phase, loggedKcal, trend)
+
+            // Computed before the coach context so its real bottleneck (not a fixed static order)
+            // can break ties among today's candidates -- see HealthCoachEngine.selectNextBestAction.
+            // Built entirely from the same real sleep/load reads HealthStateEngine/RecoveryEngine/
+            // TrainingLoadEngine already compute for the Dashboard.
+            val allDayRows = db.dayRowDao().getAllSync()
+            val healthSnapshot = com.example.domain.HealthStateEngine.evaluate(
+                com.example.domain.HealthStateEngine.Inputs(
+                    now = now, todayRow = todayRow, recentMeals = recentMeals, allMeals = allMeals,
+                    recentLogEntries = recentLogs, allLogEntries = allLogs, allDayRows = allDayRows, profile = profile,
+                ),
+            )
+            val loadReading = com.example.domain.TrainingLoadEngine.evaluate(allLogs, nowDayKey = dayKey)
+            val recoveryReading = com.example.domain.RecoveryEngine.evaluate(healthSnapshot.sleep, loadReading.state)
+            val trainingIntensity = com.example.domain.TrainingIntensityDecision.decide(recoveryReading, loadReading.state)
+            val bottleneck = com.example.domain.GoalGapEngine.evaluate(healthSnapshot, recoveryReading).bottleneck
+
             val ctx = HealthCoachEngine.Context(
                 now = now,
                 todayRow = todayRow,
@@ -119,11 +136,12 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 recentOutcomes = recentOutcomes,
                 totalHistoricalLogs = totalHistorical,
                 primaryGoal = primaryGoal ?: "hydration",
-                profile = profile
+                profile = profile,
+                bottleneck = bottleneck?.let { HealthCoachEngine.coachDomainFor(it) },
             )
-            
+
             val nba = HealthCoachEngine.selectNextBestAction(ctx)
-            
+
             // The full conversion, not just bodyweight/days/goal -- dropping bar/plates/equipment/
             // injuries here silently meant every plate breakdown and every injury filter ran
             // against TrainingProfile()'s defaults instead of what this person actually has.
@@ -133,21 +151,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 val history = allLogs.filter { it.exId == exId }
                 if (history.isNotEmpty()) history.last().load else null
             }
-            
-            // Should today be a full session, reduced, or a recovery day? Built entirely from the
-            // same real sleep/load reads HealthStateEngine/RecoveryEngine/TrainingLoadEngine
-            // already compute for the Dashboard -- see TrainingIntensityDecision's own doc comment
-            // for why this stays narrow rather than becoming a general consequence-simulation engine.
-            val allDayRows = db.dayRowDao().getAllSync()
-            val sleepState = com.example.domain.HealthStateEngine.evaluate(
-                com.example.domain.HealthStateEngine.Inputs(
-                    now = now, todayRow = todayRow, recentMeals = recentMeals, allMeals = allMeals,
-                    recentLogEntries = recentLogs, allLogEntries = allLogs, allDayRows = allDayRows, profile = profile,
-                ),
-            ).sleep
-            val loadReading = com.example.domain.TrainingLoadEngine.evaluate(allLogs, nowDayKey = dayKey)
-            val recoveryReading = com.example.domain.RecoveryEngine.evaluate(sleepState, loadReading.state)
-            val trainingIntensity = com.example.domain.TrainingIntensityDecision.decide(recoveryReading, loadReading.state)
 
             val foodEntries = recentMeals.map { m -> m to Nutrition.FOODS.find { it.id == m.foodId }?.ml }
             val waterIntake = Nutrition.fluid(foodEntries)

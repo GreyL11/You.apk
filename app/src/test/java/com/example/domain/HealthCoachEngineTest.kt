@@ -23,9 +23,10 @@ class HealthCoachEngineTest {
         recentLogEntries: List<LogEntry> = emptyList(),
         recentOutcomes: List<ActionOutcome> = emptyList(),
         profile: Profile? = null,
+        bottleneck: String? = null,
     ) = HealthCoachEngine.Context(
         now = now, todayRow = todayRow, recentMeals = recentMeals, recentLogEntries = recentLogEntries,
-        recentOutcomes = recentOutcomes, totalHistoricalLogs = 20, profile = profile,
+        recentOutcomes = recentOutcomes, totalHistoricalLogs = 20, profile = profile, bottleneck = bottleneck,
     )
 
     private fun byDomain(c: HealthCoachEngine.Context, domain: String) =
@@ -147,5 +148,34 @@ class HealthCoachEngineTest {
         assertNotNull(nba)
         assertEquals("nutrition", nba?.domain)
         assertEquals("meal_log", nba?.actionId)
+    }
+
+    // ── bottleneck tie-break ─────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `a real bottleneck reorders candidates tied on tier, ahead of the static domain order`() {
+        val trainedToday = listOf(LogEntry(exId = "squat", at = "$now", reps = 5, sets = 1, load = 50.0, faultEvents = "[]", correctedFrom = null))
+        // Same four-way DATA_COLLECTION tie as the test above, where nutrition normally wins on
+        // DOMAIN_ORDER alone -- a real hydration bottleneck must be able to override that.
+        val nba = HealthCoachEngine.selectNextBestAction(ctx(recentLogEntries = trainedToday, bottleneck = "hydration"))
+        assertEquals("hydration", nba?.domain)
+        assertEquals("hydrate_now", nba?.actionId)
+    }
+
+    @Test
+    fun `a bottleneck never overrides tier -- ACTIONABLE_NOW still beats a DATA_COLLECTION bottleneck`() {
+        val nba = HealthCoachEngine.selectNextBestAction(ctx(bottleneck = "hydration"))
+        assertEquals("training", nba?.domain)
+        assertEquals(HealthCoachEngine.Tier.ACTIONABLE_NOW, nba?.tier)
+    }
+
+    @Test
+    fun `coachDomainFor maps every GoalGapEngine dimension onto this engine's own domain vocabulary`() {
+        assertEquals("training", HealthCoachEngine.coachDomainFor(GoalGapEngine.Dimension.TRAINING_CONSISTENCY))
+        assertEquals("nutrition", HealthCoachEngine.coachDomainFor(GoalGapEngine.Dimension.NUTRITION_CONSISTENCY))
+        assertEquals("hormonalLifestyle", HealthCoachEngine.coachDomainFor(GoalGapEngine.Dimension.SLEEP_CONSISTENCY))
+        assertEquals("hormonalLifestyle", HealthCoachEngine.coachDomainFor(GoalGapEngine.Dimension.RECOVERY))
+        assertEquals("hydration", HealthCoachEngine.coachDomainFor(GoalGapEngine.Dimension.HYDRATION))
+        assertEquals("skinRoutine", HealthCoachEngine.coachDomainFor(GoalGapEngine.Dimension.SKIN_ROUTINE))
     }
 }

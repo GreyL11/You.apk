@@ -36,8 +36,24 @@ object HealthCoachEngine {
         val recentOutcomes: List<ActionOutcome>,
         val totalHistoricalLogs: Int = 0,
         val primaryGoal: String = "hydration",
-        val profile: Profile? = null
+        val profile: Profile? = null,
+        /** [GoalGapEngine]'s real bottleneck for today, already mapped via [coachDomainFor] — null
+         *  when there isn't enough evidence for one. Breaks ties WITHIN a tier only; it never
+         *  promotes a GOING_WELL candidate over an ACTIONABLE_NOW one. */
+        val bottleneck: String? = null,
     )
+
+    /** [GoalGapEngine] knows dimensions this engine doesn't (sleep and recovery are split apart,
+     *  since they're measured separately) — mapped onto this engine's own domain vocabulary rather
+     *  than teaching GoalGapEngine about it. */
+    fun coachDomainFor(dimension: GoalGapEngine.Dimension): String = when (dimension) {
+        GoalGapEngine.Dimension.TRAINING_CONSISTENCY -> "training"
+        GoalGapEngine.Dimension.NUTRITION_CONSISTENCY -> "nutrition"
+        GoalGapEngine.Dimension.SLEEP_CONSISTENCY -> "hormonalLifestyle"
+        GoalGapEngine.Dimension.RECOVERY -> "hormonalLifestyle"
+        GoalGapEngine.Dimension.HYDRATION -> "hydration"
+        GoalGapEngine.Dimension.SKIN_ROUTINE -> "skinRoutine"
+    }
 
     /**
      * Is this exact action currently suppressed by the user's own last choice on it?
@@ -146,6 +162,9 @@ object HealthCoachEngine {
         val all = candidates(ctx).filter { !isSuppressed(it.actionId, ctx) }
         return all.minWithOrNull(
             compareBy<Candidate> { it.tier.value }
+                // Only ever reorders candidates already tied on tier -- with no bottleneck (the
+                // default), every candidate scores 1 here and this line is a no-op.
+                .thenBy { if (ctx.bottleneck != null && it.domain == ctx.bottleneck) 0 else 1 }
                 .thenBy { DOMAIN_ORDER.indexOf(it.domain).let { idx -> if (idx == -1) 999 else idx } }
         )
     }

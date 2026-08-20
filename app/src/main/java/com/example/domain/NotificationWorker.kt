@@ -18,14 +18,26 @@ class NotificationWorker(
         
         val todayRow = db.dayRowDao().getSync(dayKey)
         val recentMeals = db.mealDao().getByDateSync(dayKey)
-        val recentLogEntries = db.logEntryDao().getAllSync().filter { it.at.startsWith(dayKey) }
+        val allLogs = db.logEntryDao().getAllSync()
+        val recentLogEntries = allLogs.filter { it.at.startsWith(dayKey) }
         val recentOutcomes = db.actionOutcomeDao().getAllSync()
-        
-        val allMealsCount = db.mealDao().getAllSync().size
-        val allLogsCount = db.logEntryDao().getAllSync().size
-        val allRowsCount = db.dayRowDao().getAllSync().size
-        val totalHistorical = allMealsCount + allLogsCount + allRowsCount + recentOutcomes.size
-        
+        val allMeals = db.mealDao().getAllSync()
+        val allDayRows = db.dayRowDao().getAllSync()
+        val totalHistorical = allMeals.size + allLogs.size + allDayRows.size + recentOutcomes.size
+        val profile = db.profileDao().getProfileSync()
+
+        // Same real bottleneck read TodayViewModel uses -- the notification the user actually
+        // receives should point at today's real biggest limiter, not just a fixed domain order.
+        val healthSnapshot = HealthStateEngine.evaluate(
+            HealthStateEngine.Inputs(
+                now = now, todayRow = todayRow, recentMeals = recentMeals, allMeals = allMeals,
+                recentLogEntries = recentLogEntries, allLogEntries = allLogs, allDayRows = allDayRows, profile = profile,
+            ),
+        )
+        val loadReading = TrainingLoadEngine.evaluate(allLogs, nowDayKey = dayKey)
+        val recoveryReading = RecoveryEngine.evaluate(healthSnapshot.sleep, loadReading.state)
+        val bottleneck = GoalGapEngine.evaluate(healthSnapshot, recoveryReading).bottleneck
+
         val ctx = HealthCoachEngine.Context(
             now = now,
             todayRow = todayRow,
@@ -33,9 +45,10 @@ class NotificationWorker(
             recentLogEntries = recentLogEntries,
             recentOutcomes = recentOutcomes,
             totalHistoricalLogs = totalHistorical,
-            profile = db.profileDao().getProfileSync()
+            profile = profile,
+            bottleneck = bottleneck?.let { HealthCoachEngine.coachDomainFor(it) },
         )
-        
+
         val nba = HealthCoachEngine.selectNextBestAction(ctx) ?: return Result.success()
         
         // Quiet hours: e.g. 10 PM to 7 AM
