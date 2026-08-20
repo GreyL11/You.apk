@@ -32,7 +32,8 @@ class WeeklyReviewViewModel(application: Application) : AndroidViewModel(applica
         val hormonalLifestyle: String,
         val whatWentWell: String,
         val whatNeedsAttention: String,
-        val nextWeekFocus: String
+        val nextWeekFocus: String,
+        val domainHabits: List<com.example.domain.AdaptationEngine.DomainHabit> = emptyList(),
     )
     
     private val _state = MutableStateFlow<ReviewState?>(null)
@@ -133,6 +134,7 @@ class WeeklyReviewViewModel(application: Application) : AndroidViewModel(applica
                 hydration = hydrationStatus,
                 skinRoutine = skinStatus,
                 sleepRecovery = sleepStatus,
+                domainHabits = com.example.domain.AdaptationEngine.domainHabits(outcomes),
                 hormonalLifestyle = if (sleepStatus != "Insufficient data.") "Supported by sleep data." else "Absent evidence.",
                 whatWentWell = well,
                 whatNeedsAttention = attention,
@@ -202,8 +204,23 @@ fun WeeklyReviewScreen(onBack: () -> Unit) {
                 Text("WHAT NEEDS ATTENTION", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(state!!.whatNeedsAttention, style = MaterialTheme.typography.bodyLarge)
                 
-                Spacer(modifier = Modifier.height(16.dp))
-                
+                if (state!!.domainHabits.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("WHAT YOU ACTUALLY ACT ON", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    // Read-only, on purpose -- AdaptationEngine's own doc comment: the thing you
+                    // skip most is often the thing you most need, so this is surfaced as a fact for
+                    // you to act on, never used to quietly stop offering a domain.
+                    state!!.domainHabits.forEach { habit ->
+                        val pct = (habit.rate * 100).toInt()
+                        Text(
+                            "${habit.domain}: completed $pct% of ${habit.offered} reminders",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                     modifier = Modifier.fillMaxWidth()
