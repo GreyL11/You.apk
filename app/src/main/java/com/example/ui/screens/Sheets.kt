@@ -265,6 +265,41 @@ fun SkinSheet(
     }
 }
 
+/** A single 1-10 mood self-report, feeding [com.example.domain.WellbeingEngine] -- the one
+ *  self-report dimension the schema already has ([DayRow.mood]). Never asks why, never labels
+ *  the number, just records it. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MoodSheet(
+    onDismiss: () -> Unit,
+    onLog: (Int) -> Unit
+) {
+    var score by remember { mutableStateOf(5) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Log Mood", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("How are you feeling today? (1 = rough, 10 = great)", style = MaterialTheme.typography.bodyMedium)
+
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (n in 1..10) {
+                    FilterChip(selected = score == n, onClick = { score = n }, label = { Text("$n") })
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { onLog(score) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Save")
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
 /** Every exercise in the real catalogue, so picking one is never limited to squat/bench —
  *  the prior hardcoded two-button row (matching what LiveSessionScreen used to assume) is gone;
  *  the picker and the live session now read from the same `Exercises.EXERCISES` source. */

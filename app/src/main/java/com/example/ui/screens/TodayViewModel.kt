@@ -42,7 +42,8 @@ data class TodayDashboardState(
     val hydrationVsBaseline: String? = null,
     val sleepVsBaseline: String? = null,
     val trainingIntensity: com.example.domain.TrainingIntensityDecision.Reading? = null,
-    val hasCompletedTraining: Boolean = false
+    val hasCompletedTraining: Boolean = false,
+    val wellbeing: com.example.domain.WellbeingEngine.Reading = com.example.domain.WellbeingEngine.Reading(com.example.domain.WellbeingEngine.Pattern.INSUFFICIENT_DATA, null)
 )
 
 class TodayViewModel(application: Application) : AndroidViewModel(application) {
@@ -161,6 +162,11 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             val lastNightHours = todayRow?.let { com.example.domain.MoodInsights.sleepSummary(it).main }
             val sleepVsBaseline = com.example.domain.PersonalBaseline.compare(lastNightHours, sleepBaseline)
 
+            // Oldest-first real logged moods only -- a day nobody rated is absent, never a skipped-low.
+            val wellbeing = com.example.domain.WellbeingEngine.evaluate(
+                allDayRows.sortedBy { it.dayKey }.mapNotNull { it.mood },
+            )
+
             _dashboardState.value = TodayDashboardState(
                 nextBestAction = nba,
                 profile = profile,
@@ -182,8 +188,18 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 hydrationVsBaseline = hydrationVsBaseline,
                 sleepVsBaseline = sleepVsBaseline,
                 trainingIntensity = trainingIntensity,
-                hasCompletedTraining = recentOutcomes.any { it.actionId == "train_today" && it.event == HealthCoachEngine.ActionState.COMPLETED.name && it.at.startsWith(dayKey) }
+                hasCompletedTraining = recentOutcomes.any { it.actionId == "train_today" && it.event == HealthCoachEngine.ActionState.COMPLETED.name && it.at.startsWith(dayKey) },
+                wellbeing = wellbeing,
             )
+        }
+    }
+
+    fun logMood(score: Int) {
+        viewModelScope.launch {
+            val dayKey = LocalDateTime.now().toLocalDate().toString()
+            val existing = db.dayRowDao().getSync(dayKey)
+            db.dayRowDao().insert((existing ?: DayRow(dayKey, null, null, null, null, null, null)).copy(mood = score))
+            refresh()
         }
     }
 

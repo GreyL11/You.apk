@@ -44,6 +44,7 @@ fun TodayScreen(
     var showWorkoutSheet by remember { mutableStateOf(false) }
     var showSleepSheet by remember { mutableStateOf(false) }
     var showWeightSheet by remember { mutableStateOf(false) }
+    var showMoodSheet by remember { mutableStateOf(false) }
 
     // A notification that asks a question and then drops you on a dashboard has wasted the
     // interruption. The actionId the coach already puts in the notification opens the sheet that
@@ -129,6 +130,16 @@ fun TodayScreen(
             onLog = { bed, wake ->
                 viewModel.logSleep(bed, wake)
                 showSleepSheet = false
+            }
+        )
+    }
+
+    if (showMoodSheet) {
+        MoodSheet(
+            onDismiss = { showMoodSheet = false },
+            onLog = { score ->
+                viewModel.logMood(score)
+                showMoodSheet = false
             }
         )
     }
@@ -465,7 +476,33 @@ fun TodayScreen(
                 buttonText = if (state.todayRow?.sleeps != null) "Update" else "Log Sleep"
             )
 
-            // 8. WEEKLY INSIGHTS
+            // 8. WELLBEING
+            DashboardSectionTitle("Wellbeing")
+            val moodDesc = state.todayRow?.mood?.let { "Today: $it/10" } ?: "No mood logged today."
+            DashboardCard(
+                icon = Icons.Filled.Mood,
+                title = "Mood",
+                subtitle = moodDesc,
+                onClick = { showMoodSheet = true },
+                buttonText = if (state.todayRow?.mood != null) "Update" else "Log Mood"
+            )
+            // Only shown once the pattern is real (5+ check-ins) and worth interrupting for --
+            // a single bad day, or fewer than WellbeingEngine.MIN_CHECKINS entries, says nothing here.
+            state.wellbeing.note?.let { note ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                ) {
+                    Text(
+                        note,
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                }
+            }
+
+            // 9. WEEKLY INSIGHTS
             Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = onNavigateToWeeklyReview,
