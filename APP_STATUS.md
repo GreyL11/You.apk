@@ -2,6 +2,8 @@
 
 Written 2026-08-20 from a direct, exhaustive read of every file on disk in `C:\Users\jaswanth.sarilla\StudioProjects\You_android` — including the ~80 files of uncommitted work from a separate session (see "Working-copy state" below). This supersedes the shorter status note written earlier the same day.
 
+**Updated 2026-08-21** with the closed-loop adaptive coach (section 11) — the first section of this document written against a **verified green build**: `./gradlew testDebugUnitTest` → `BUILD SUCCESSFUL`, **350 tests, 0 failures, 0 errors** (confirmed by reading the JUnit XML in `app/build/test-results/`, not just the exit code). Sections 1–10 predate that run and are unchanged except where section 11 supersedes them.
+
 ---
 
 ## 1. What this app is
@@ -13,7 +15,9 @@ A Kotlin/Jetpack Compose Android rewrite of a shipped Capacitor/JS fitness+healt
 ## 2. Working-copy state
 
 - `C:\Users\jaswanth.sarilla\Downloads\You.apk` — synced to `origin/main` on GitHub, used for git operations.
-- `C:\Users\jaswanth.sarilla\StudioProjects\You_android` — the live Android Studio project, run on a real device (Motorola Edge 60 Pro). **~80 files ahead of `origin/main`, entirely uncommitted**, from a separate session (2026-08-18 → 2026-08-20). Not yet committed or pushed anywhere — exists only in this one working copy. This document describes that live, uncommitted state.
+- `C:\Users\jaswanth.sarilla\StudioProjects\You_android` — the live Android Studio project, run on a real device (Motorola Edge 60 Pro).
+
+**Resolved 2026-08-21**: the ~80-file uncommitted backlog described here is now committed and pushed. Both working copies are synced to `origin/main` at `6b88cba`. The "exists only in one working copy" risk this section used to warn about is closed.
 
 ## 3. Build environment (this machine specifically)
 
@@ -127,5 +131,53 @@ The real "intelligence" layer. Overall texture: heavily commented, each file nam
 4. **Unbounded tables**: `log_entry`, `verdict`, `chat_message`, `action_outcome` have retention-cap logic that's never invoked. Either wire up their `enforceCap()` calls or remove the dead cap methods.
 5. **Dead code cleanup candidates**: `Evidence.kt`, `Reminders.kt`, `SkinNoteParser.kt` (unless being wired up next), `BoxingScreen.kt`, `FaceScreen.kt`, `SkinScreen()`/dead parts of `MindScreen.kt`, `check_entity`/`round` tables.
 6. **`HormonalScreen` is fully built and tested but unreachable** — either wire a nav entry point for it (it's arguably the most complete unfinished feature in the app) or intentionally retire it.
-7. **This entire ~80-file body of work is uncommitted** — still true as of this writing. Recommend committing/pushing before anything else touches this checkout.
-8. **Nothing here has been compiled** — same standing machine constraint. Needs `./gradlew testDebugUnitTest` (or Run) from Android Studio to confirm any of section 6-7's code actually builds.
+7. ~~**This entire ~80-file body of work is uncommitted**~~ — **RESOLVED 2026-08-21.** Committed and pushed; both copies synced at `6b88cba`.
+8. ~~**Nothing here has been compiled**~~ — **RESOLVED 2026-08-21.** `./gradlew testDebugUnitTest` → `BUILD SUCCESSFUL`, 350 tests / 0 failures. See section 11.
+
+Items 1–6 above were written 2026-08-20 and have **not** been re-verified against the current tree; several were addressed during 2026-08-20/21 work (item 3 in particular — `HealthCoachEngineTest.kt` now exists, and item 4's `enforceCap()` calls are wired in `TodayViewModel.refresh()`). Treat 1–6 as a 2026-08-20 snapshot needing a re-audit, not as current.
+
+---
+
+## 11. Closed-loop adaptive coach (2026-08-21)
+
+The app could already observe, remember and explain. It could not **decide**. Training came from `Planner`'s fixed Mon/Wed/Fri split regardless of what had actually been trained; there was no cardio concept at all; readiness had no access to how the person actually felt.
+
+**Verification: `./gradlew testDebugUnitTest` → `BUILD SUCCESSFUL`, 350 tests, 0 failures, 0 errors.** Confirmed by reading `app/build/test-results/testDebugUnitTest/*.xml` directly. `compileDebugKotlin` clean, zero warnings.
+
+### Status by component
+
+| Component | Status | Notes |
+|---|---|---|
+| `TrainingHistory.kt` | **COMPLETE** | Pattern recency, consecutive-day streaks, neglect detection, per-day difficulty averaging. 13 tests. |
+| `Cardio.kt` | **COMPLETE** | Modes ordered by real recovery cost; persisted in the existing `DayRow.plans` JSON column (no new table). Base/volume/gap reads. 12 tests. |
+| `ReadinessEngine.kt` | **COMPLETE** | 6 categories + own confidence + real named factors. Never a percentage. 11 tests. |
+| `DailyDecisionEngine.kt` | **COMPLETE** | Candidate generation with hard safety floors. 24 tests. |
+| `PersonalState.kt` | **COMPLETE** | Single assembler; `TodayViewModel` and `NotificationWorker` both consume it. |
+| `NextActionEngine.kt` | **COMPLETE** | "What should I do right now", time-of-day aware. |
+| Today's Mission UI | **COMPLETE** | Readiness + confidence + training/cardio decisions + expandable "Why?". |
+| Check-in / cardio / difficulty capture | **COMPLETE** | `CheckInSheet`, `CardioSheet`, optional difficulty on manual workout logging. |
+| Schema v3 migration | **COMPLETE** | Real `MIGRATION_2_3`; no destructive fallback. |
+| **On-device verification** | **BLOCKED** | Phone not connected (`adb devices` empty, `installDebug` → "No connected devices!"). Nothing in this section has run on real hardware. |
+| Gemini wording layer for these decisions | **NOT STARTED** | Decisions are surfaced as engine-authored text. The `Digest`/`Claims`/`Validate`/`Explain` layer is not yet wired to them. |
+
+### Safety floors, each covered by a test
+
+- Very low readiness → **rest**, regardless of what is neglected.
+- Intervals never appear below good readiness, **nor on a beginner/unknown aerobic base**. Asserted exhaustively across every readiness level.
+- Severe soreness (≥7/10) caps cardio at an easy walk.
+- A leg-focused session caps cardio to easy movement rather than stacking recovery cost.
+- Progression requires **both** real readiness **and** no recent too-hard feedback — either alone is insufficient.
+- A pattern trained within 2 days is never re-prescribed as today's focus.
+
+### Schema change (v2 → v3)
+
+`log_entry.difficulty`, and `day_row.energy` / `soreness` / `stress` / `refreshed`. All nullable, **no `DEFAULT`** — deliberately, so every pre-existing row reads as "not answered" rather than acquiring a neutral score the person never gave. `ReadinessEngine` distinguishes absent from average, so a default would have manufactured evidence for every historical day.
+
+### Known limitations — stated plainly
+
+1. **Not run on a device.** Unit-tested and compiling, but zero hardware verification. The v3 migration in particular has never executed against a real populated database.
+2. **Cold start is honest but thin.** `difficulty` and the check-in fields did not exist before 2026-08-21, so no historical row has them. Expect `LOW`/`INSUFFICIENT` confidence and conservative defaults until several days of real check-ins accumulate. This is correct behaviour, not a bug.
+3. **Cardio base bands are unvalidated thresholds.** The 50 / 120 aerobic-min-per-week boundaries between BEGINNER/DEVELOPING/ESTABLISHED are reasonable coaching heuristics, not fitted to this person's data or to a cited source.
+4. **`Planner` still generates the actual exercise list.** `DailyDecisionEngine` decides the movement-pattern *focus*, but the concrete lifts still come from `Planner`'s split, which is not yet pattern-aware. The focus decision is therefore advisory over the session content — the largest remaining gap in this section.
+5. **No `LiveSessionScreen` difficulty prompt.** Only manual logging captures difficulty; camera sessions leave it null.
+6. **Rest-day cardio wording.** A `daysSince >= 7` gap reason can still be appended when the mode was capped to something lighter, so the stated reason and the prescribed mode can read slightly out of step.
