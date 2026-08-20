@@ -72,6 +72,8 @@ class NutritionTest {
 
     @Test
     fun `nothing logged is a real zero, not an absence`() {
-        assertEquals(Nutrition.Macros(0, 0, 0, 0), Nutrition.macros(emptyList()))
+        // Explicit: macros() is overloaded for both List<Meal> and List<Pair<String, Double>>, so a
+        // bare emptyList() is genuinely ambiguous. This asserts the no-meals-logged case.
+        assertEquals(Nutrition.Macros(0, 0, 0, 0), Nutrition.macros(emptyList<Meal>()))
     }
 }
