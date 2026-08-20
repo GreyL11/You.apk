@@ -24,9 +24,11 @@ class HealthCoachEngineTest {
         recentOutcomes: List<ActionOutcome> = emptyList(),
         profile: Profile? = null,
         bottleneck: String? = null,
+        pushPullBalance: TrainingCoverageEngine.Balance = TrainingCoverageEngine.Balance.INSUFFICIENT_DATA,
     ) = HealthCoachEngine.Context(
         now = now, todayRow = todayRow, recentMeals = recentMeals, recentLogEntries = recentLogEntries,
         recentOutcomes = recentOutcomes, totalHistoricalLogs = 20, profile = profile, bottleneck = bottleneck,
+        pushPullBalance = pushPullBalance,
     )
 
     private fun byDomain(c: HealthCoachEngine.Context, domain: String) =
@@ -167,6 +169,28 @@ class HealthCoachEngineTest {
         val nba = HealthCoachEngine.selectNextBestAction(ctx(bottleneck = "hydration"))
         assertEquals("training", nba?.domain)
         assertEquals(HealthCoachEngine.Tier.ACTIONABLE_NOW, nba?.tier)
+    }
+
+    // ── push/pull imbalance note ─────────────────────────────────────────────────────────────
+
+    @Test
+    fun `no real imbalance evidence leaves the training reason exactly as it always was`() {
+        val c = byDomain(ctx(), "training")
+        assertEquals("It's a good day to get a session in.", c.reason)
+    }
+
+    @Test
+    fun `a real lagging pull adds a real note, never silently to a different tier or action`() {
+        val c = byDomain(ctx(pushPullBalance = TrainingCoverageEngine.Balance.PULL_NEEDS_WORK), "training")
+        assertEquals("train_today", c.actionId)
+        assertEquals(HealthCoachEngine.Tier.ACTIONABLE_NOW, c.tier)
+        assertTrue(c.reason.contains("pull volume has lagged"))
+    }
+
+    @Test
+    fun `a real lagging push adds the matching note`() {
+        val c = byDomain(ctx(pushPullBalance = TrainingCoverageEngine.Balance.PUSH_NEEDS_WORK), "training")
+        assertTrue(c.reason.contains("push volume has lagged"))
     }
 
     @Test

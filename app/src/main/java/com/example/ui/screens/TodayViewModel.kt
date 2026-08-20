@@ -127,6 +127,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             val recoveryReading = com.example.domain.RecoveryEngine.evaluate(healthSnapshot.sleep, loadReading.state)
             val trainingIntensity = com.example.domain.TrainingIntensityDecision.decide(recoveryReading, loadReading.state)
             val bottleneck = com.example.domain.GoalGapEngine.evaluate(healthSnapshot, recoveryReading).bottleneck
+            val pushPull = com.example.domain.TrainingCoverageEngine.pushPullBalance(allLogs)
 
             val ctx = HealthCoachEngine.Context(
                 now = now,
@@ -138,6 +139,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 primaryGoal = primaryGoal ?: "hydration",
                 profile = profile,
                 bottleneck = bottleneck?.let { HealthCoachEngine.coachDomainFor(it) },
+                pushPullBalance = pushPull.balance,
             )
 
             val nba = HealthCoachEngine.selectNextBestAction(ctx)

@@ -37,6 +37,7 @@ class NotificationWorker(
         val loadReading = TrainingLoadEngine.evaluate(allLogs, nowDayKey = dayKey)
         val recoveryReading = RecoveryEngine.evaluate(healthSnapshot.sleep, loadReading.state)
         val bottleneck = GoalGapEngine.evaluate(healthSnapshot, recoveryReading).bottleneck
+        val pushPull = TrainingCoverageEngine.pushPullBalance(allLogs)
 
         val ctx = HealthCoachEngine.Context(
             now = now,
@@ -47,6 +48,7 @@ class NotificationWorker(
             totalHistoricalLogs = totalHistorical,
             profile = profile,
             bottleneck = bottleneck?.let { HealthCoachEngine.coachDomainFor(it) },
+            pushPullBalance = pushPull.balance,
         )
 
         val nba = HealthCoachEngine.selectNextBestAction(ctx) ?: return Result.success()

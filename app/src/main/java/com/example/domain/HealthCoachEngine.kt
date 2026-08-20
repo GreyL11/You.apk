@@ -41,6 +41,10 @@ object HealthCoachEngine {
          *  when there isn't enough evidence for one. Breaks ties WITHIN a tier only; it never
          *  promotes a GOING_WELL candidate over an ACTIONABLE_NOW one. */
         val bottleneck: String? = null,
+        /** [TrainingCoverageEngine]'s real push/pull read — INSUFFICIENT_DATA by default, which
+         *  leaves the training candidate's reason text exactly as it always was. Only ever changes
+         *  wording, never tier or ordering. */
+        val pushPullBalance: TrainingCoverageEngine.Balance = TrainingCoverageEngine.Balance.INSUFFICIENT_DATA,
     )
 
     /** [GoalGapEngine] knows dimensions this engine doesn't (sleep and recovery are split apart,
@@ -143,7 +147,14 @@ object HealthCoachEngine {
         // Training Logic
         val trainingDone = ctx.recentLogEntries.any { it.at.startsWith(ctx.now.toLocalDate().toString()) }
         if (!trainingDone) {
-            list.add(Candidate("training", "train_today", "Hit the gym", "It's a good day to get a session in.", Tier.ACTIONABLE_NOW))
+            // A real, evidence-based note only when TrainingCoverageEngine has enough logged
+            // sessions on both sides to call an actual imbalance -- never a guess dressed as one.
+            val imbalanceNote = when (ctx.pushPullBalance) {
+                TrainingCoverageEngine.Balance.PULL_NEEDS_WORK -> " Your pull volume has lagged your push for a while — a good day to prioritize that."
+                TrainingCoverageEngine.Balance.PUSH_NEEDS_WORK -> " Your push volume has lagged your pull for a while — a good day to prioritize that."
+                else -> ""
+            }
+            list.add(Candidate("training", "train_today", "Hit the gym", "It's a good day to get a session in.$imbalanceNote", Tier.ACTIONABLE_NOW))
         } else {
             list.add(Candidate("training", "train_rest", "Rest and Recover", "You trained today. Great job.", Tier.GOING_WELL))
         }
