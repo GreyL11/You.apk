@@ -81,7 +81,7 @@ object DailyDecisionEngine {
 
         // Everything was trained in the last couple of days -- that IS the answer, and it means
         // today is not a day to hit any of it again hard.
-        if (candidates.isEmpty()) return emptyList() to "Recovery"
+        if (candidates.isEmpty()) return emptyList<MovementPattern>() to "Recovery"
 
         val lower = candidates.filter { it in TrainingHistory.LOWER_BODY }
         val upper = candidates.filter { it !in TrainingHistory.LOWER_BODY }
