@@ -89,11 +89,20 @@ class AdaptationEngineTest {
 
     @Test
     fun `it asks the notifier to wait when their usual window is still ahead`() {
-        val morningPerson = completions("hydrate_now", hour = 9, n = 5)
+        val eveningPerson = completions("skin_log", hour = 21, n = 5)
         assertTrue(
-            "07:00 for a 09:00 person, with the morning still to come",
-            AdaptationEngine.shouldWaitForBetterHour("hydrate_now", morningPerson, at(7)),
+            "07:00 for an evening person, with the whole evening still to come",
+            AdaptationEngine.shouldWaitForBetterHour("skin_log", eveningPerson, at(7)),
         )
+    }
+
+    @Test
+    fun `timing is bucketed, so another hour inside their own part of day is not worth delaying for`() {
+        // 07:00 for an 09:00 person: both are MORNING. This engine deliberately models part-of-day,
+        // not a target hour -- holding a reminder back to land nearer 09:00 would be acting on
+        // precision the bucket does not claim to have.
+        val morningPerson = completions("hydrate_now", hour = 9, n = 5)
+        assertFalse(AdaptationEngine.shouldWaitForBetterHour("hydrate_now", morningPerson, at(7)))
     }
 
     @Test

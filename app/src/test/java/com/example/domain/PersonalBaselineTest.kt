@@ -73,7 +73,9 @@ class PersonalBaselineTest {
         val m = PersonalBaseline.trainingSessionsPerWeek(logs, windowDays = 28)
         assertEquals(6, m.sampleSize)
         assertEquals(1.5, m.typical!!, 0.001)
-        assertEquals(PersonalBaseline.Confidence.LOW, m.confidence)
+        // 28 days is a full four weeks of observation, which lands in the MODERATE band
+        // (14..27 is LOW). The confidence ladder reads the window length, not the session count.
+        assertEquals(PersonalBaseline.Confidence.MODERATE, m.confidence)
     }
 
     @Test
