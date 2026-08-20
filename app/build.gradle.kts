@@ -15,7 +15,10 @@ android {
 
   defaultConfig {
     applicationId = "com.aistudio.trainer.qmwzrt"
-    minSdk = 24
+    // 26 (Android 8.0), raised from 24 because androidx.health.connect requires it. Also the level
+    // where java.time exists natively, which this app uses everywhere — desugaring stays on for the
+    // rest of the library surface, but the sleep/date arithmetic is no longer backported.
+    minSdk = 26
     targetSdk = 36
     versionCode = 1
     versionName = "1.0"
@@ -56,6 +59,8 @@ android {
     compose = true
     buildConfig = true
   }
+  androidResources { noCompress += listOf("task", "tflite") }
+
   testOptions { unitTests { isIncludeAndroidResources = true } }
   dependenciesInfo {
     includeInApk = false
@@ -87,7 +92,9 @@ dependencies {
   implementation(libs.androidx.camera.view)
   implementation("com.google.mlkit:pose-detection:17.0.0")
   implementation("com.google.mlkit:pose-detection-accurate:17.0.0")
-  implementation("com.google.mlkit:face-detection:16.1.6")
+  // face-detection: removed. FaceAnalyzer now runs on MediaPipe's FaceLandmarker (already a
+  // dependency, see mediapipe.tasks.vision below) for real 478-point landmarks instead of ML Kit's
+  // bounding box and Euler angles — the only thing this library was doing in the app.
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.androidx.compose.material3)
@@ -95,6 +102,8 @@ dependencies {
   implementation(libs.androidx.compose.ui.graphics)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
+  implementation(libs.androidx.health.connect.client)
+  implementation(libs.mediapipe.tasks.vision)
   implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.androidx.lifecycle.runtime.compose)
@@ -127,6 +136,12 @@ dependencies {
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
   testImplementation(libs.junit)
+  // The android.jar on the unit-test classpath is a STUB: every org.json call throws
+  // RuntimeException("Stub!"). Anything storing JSON in a column (FaceScan, sleep blocks, skin
+  // routines) is untestable without a real implementation, and the alternative —
+  // unitTests.isReturnDefaultValues — makes the stubs return empty instead of throwing, which
+  // would let those tests pass while parsing nothing.
+  testImplementation("org.json:json:20240303")
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.robolectric)
   testImplementation(libs.roborazzi)

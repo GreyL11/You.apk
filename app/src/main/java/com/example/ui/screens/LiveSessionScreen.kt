@@ -47,6 +47,10 @@ fun LiveSessionScreen(
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     val ex = remember(exId) { EXERCISES[exId] }
     val engine = remember(exId) { MovementEngine(exId) }
+    // The real bar/plates/injuries, not TrainingProfile()'s defaults -- see ProfileMapping.kt.
+    // Read here rather than threaded as a parameter because this is the one screen that both
+    // suggests a load and snaps a progression, and both have to agree with what is on the bar.
+    val dashboardState by todayViewModel.dashboardState.collectAsState()
 
     var reps by remember { mutableStateOf(0) }
     var isSaving by remember { mutableStateOf(false) }
@@ -57,7 +61,17 @@ fun LiveSessionScreen(
     // omission — see TodayViewModel.suggestedLoad.
     var suggestedLoad by remember { mutableStateOf(0.0) }
 
-    LaunchedEffect(exId) { suggestedLoad = todayViewModel.suggestedLoad(exId) }
+    // What this lifter has been shown to simply do -- computed once per lift, from their own logged
+    // sessions, not per frame. Empty until FormBaseline.MIN_SESSIONS of history exists, so a new
+    // lifter is cued on everything.
+    var habitualFaultIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(exId) {
+        habitualFaultIds = todayViewModel.habitualFaultIds(exId)
+    }
+
+    LaunchedEffect(exId, dashboardState.trainingProfile) {
+        suggestedLoad = todayViewModel.suggestedLoad(exId, dashboardState.trainingProfile)
+    }
 
     if (ex == null) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -77,10 +91,21 @@ fun LiveSessionScreen(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text("Reps: $reps", style = MaterialTheme.typography.headlineSmall)
-                Text(
-                    if (bodyweight) "Bodyweight" else "Suggested load: ${suggestedLoad} kg",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (!bodyweight) {
+                    Text(
+                        "Suggested load: ${suggestedLoad} kg",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // The number this screen already had. What it did not have: what to actually
+                    // hang on the bar to get there, which is the thing you need standing at the rack.
+                    Text(
+                        com.example.domain.Planner.loadoutText(suggestedLoad, dashboardState.trainingProfile),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text("Bodyweight", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 faultCue?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
 
@@ -92,6 +117,7 @@ fun LiveSessionScreen(
                         reps = reps,
                         load = if (bodyweight) 0.0 else suggestedLoad,
                         faultEvents = engine.faultEvents.toList(),
+                        profile = dashboardState.trainingProfile,
                     )
                     onBack()
                 }
@@ -104,7 +130,10 @@ fun LiveSessionScreen(
 
         if (cameraPermissionState.status.isGranted) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                LiveSessionCameraPreview(engine) { r, cue -> reps = r; faultCue = cue }
+                LiveSessionCameraPreview(
+                    engine = engine,
+                    shouldCue = { faultId -> faultId !in habitualFaultIds },
+                ) { r, cue -> reps = r; faultCue = cue }
             }
         } else {
             Button(onClick = { cameraPermissionState.launchPermissionRequest() }) {
@@ -143,7 +172,12 @@ private fun extractSide(pose: Pose, side: Side, w: Int, h: Int): Map<Joint, Pt> 
 }
 
 @Composable
-private fun LiveSessionCameraPreview(engine: MovementEngine, onUpdate: (Int, String?) -> Unit) {
+private fun LiveSessionCameraPreview(
+    engine: MovementEngine,
+    /** Which fault ids are still worth speaking aloud for this lifter -- see FormBaseline. */
+    shouldCue: (String) -> Boolean,
+    onUpdate: (Int, String?) -> Unit,
+) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
@@ -157,7 +191,11 @@ private fun LiveSessionCameraPreview(engine: MovementEngine, onUpdate: (Int, Str
                     val left = extractSide(pose, Side.LEFT, w, h)
                     val right = extractSide(pose, Side.RIGHT, w, h)
                     val result = engine.step(MovementFrame(left, right, System.currentTimeMillis(), view = "side"))
-                    onUpdate(result.reps, result.faults.firstOrNull()?.cue)
+                    // Faults are still all RECORDED by the engine; this only decides what gets
+                    // said out loud. A cue this lifter has heard on 200 straight reps is noise, and
+                    // noise is why people stop looking at the screen -- including on the rep that
+                    // matters. Safety faults are never filtered, however habitual.
+                    onUpdate(result.reps, result.faults.firstOrNull { shouldCue(it.id) }?.cue)
                 })
             }
     }
@@ -190,7 +228,8 @@ private fun LiveSessionCameraPreview(engine: MovementEngine, onUpdate: (Int, Str
     )
 }
 
-// Unchanged — BoxingScreen.kt depends on this composable; not part of P0-3's scope.
+// No current caller (its only one, BoxingScreen.kt, was removed as dead/unrouted code) — kept as a
+// small, working rear-camera preview building block rather than deleted speculatively.
 @Composable
 fun RearCameraPreview() {
     val lifecycleOwner = LocalLifecycleOwner.current

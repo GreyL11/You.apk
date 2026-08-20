@@ -7,7 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -28,42 +28,42 @@ fun FaceHistoryScreen(
 ) {
     val history by viewModel.history.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F1115))) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
             }
             Spacer(modifier = Modifier.width(4.dp))
-            Text("SCAN HISTORY", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+            Text("SCAN HISTORY", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
         }
 
         if (history.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                Text("No scans yet.", color = Color.White.copy(alpha = 0.5f))
+                Text("No scans yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                 items(history) { record ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF161920)),
-                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = MaterialTheme.shapes.large,
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Column {
-                                Text(record.at, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                                Text(record.at, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
                                 Text(
                                     "${(record.metrics.faceSizeFraction * 100).roundToInt()}% framing",
-                                    color = Color.White.copy(alpha = 0.5f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
                             Text(
                                 if (record.valid) "Valid" else "Invalid",
-                                color = if (record.valid) Color(0xFF4ADE80) else Color(0xFFF87171),
+                                color = if (record.valid) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
                             )

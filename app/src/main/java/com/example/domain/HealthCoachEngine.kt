@@ -11,7 +11,7 @@ object HealthCoachEngine {
         GOING_WELL(3)
     }
 
-    val DOMAIN_ORDER = listOf("training", "hormonalLifestyle", "hydration", "skinRoutine")
+    val DOMAIN_ORDER = listOf("training", "nutrition", "hormonalLifestyle", "hydration", "skinRoutine")
 
     enum class ActionState {
         OFFERED, STARTED, COMPLETED, SKIPPED, POSTPONED, CANCELLED
@@ -89,6 +89,32 @@ object HealthCoachEngine {
             list.add(Candidate("hydration", "hydrate_now", "Drink water now", "You've had ${haveMl}ml of your ${targetMl}ml target today.", Tier.ACTIONABLE_NOW))
         } else {
             list.add(Candidate("hydration", "hydrate_maintain", "Hydration target met", "Your hydration is on track.", Tier.GOING_WELL))
+        }
+
+        // Eating. Asked as a question, because that is what it is: the app does not know and cannot
+        // guess. Fluids are excluded deliberately — a food with `ml` is drink, already counted by the
+        // hydration candidate above, and a day of nothing but water is not a day of eating. (Milk has
+        // both ml and macros; it counts as drink here, which is the conservative reading: it will ask
+        // about food you may have had rather than assume a meal you did not log.)
+        val ateToday = ctx.recentMeals.any { meal ->
+            Nutrition.FOODS.find { it.id == meal.foodId }?.ml == null
+        }
+        if (!ateToday) {
+            list.add(
+                Candidate(
+                    "nutrition", "meal_log", "What did you have today?",
+                    "No food is logged today. Tell the app what you ate and it can start reading your intake instead of guessing at it.",
+                    Tier.DATA_COLLECTION,
+                ),
+            )
+        } else {
+            list.add(
+                Candidate(
+                    "nutrition", "meal_logged", "Meals tracked",
+                    "You logged what you ate today.",
+                    Tier.GOING_WELL,
+                ),
+            )
         }
 
         // Skin Routine Logic

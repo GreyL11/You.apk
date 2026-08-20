@@ -5,8 +5,20 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Health Connect: read-only. The app never writes health data back, so no WRITE_* is asked
+         for. Each of these is still granted individually by the user in Health Connect's own UI. -->
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
     <uses-feature android:name="android.hardware.camera" />
     <uses-feature android:name="android.hardware.camera.front" />
+
+    <!-- Health Connect ships as its own app on Android 13 and below; without this the client
+         cannot even see whether it is installed. -->
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -27,7 +39,29 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Health Connect requires an explanation screen to be reachable from its own settings,
+                 on both the old (pre-API 34) and new routes. Both land on MainActivity. -->
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
         </activity>
+
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Answers the notification's own buttons, so "Later" never has to open the app. -->
+        <receiver
+            android:name=".domain.NotificationActionReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

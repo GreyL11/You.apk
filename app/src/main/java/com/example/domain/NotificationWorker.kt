@@ -48,7 +48,8 @@ class NotificationWorker(
                 controller.sendCoachNotification(
                     title = nba.title,
                     message = nba.reason,
-                    actionId = nba.actionId
+                    actionId = nba.actionId,
+                    domain = nba.domain
                 )
                 
                 // Record that we offered it

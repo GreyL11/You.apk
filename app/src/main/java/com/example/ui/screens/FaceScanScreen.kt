@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -58,7 +58,7 @@ fun FaceScanScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F1115)),
+            .background(MaterialTheme.colorScheme.background),
     ) {
         if (cameraPermissionState.status.isGranted) {
             FaceScanCameraPreview { count, m ->
@@ -82,7 +82,7 @@ fun FaceScanScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text("Camera access is needed for a guided face scan.", color = Color.White, textAlign = TextAlign.Center)
+                Text("Camera access is needed for a guided face scan.", color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = { cameraPermissionState.launchPermissionRequest() }) { Text("Grant Camera Permission") }
             }
@@ -104,7 +104,7 @@ fun FaceScanScreen(
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            val ringColor = if (issue == null) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.5f)
+            val ringColor = if (issue == null) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
             Box(
                 modifier = Modifier
                     .size(14.dp)
@@ -114,7 +114,7 @@ fun FaceScanScreen(
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = if (cameraPermissionState.status.isGranted) FaceScan.guidance(issue) else "Position your face in the frame",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center,
@@ -124,8 +124,8 @@ fun FaceScanScreen(
                 LinearProgressIndicator(
                     progress = { (goodFrames.toFloat() / FaceScan.HOLD_FRAMES_TO_CAPTURE).coerceAtMost(1f) },
                     modifier = Modifier.fillMaxWidth(0.6f).clip(RoundedCornerShape(4.dp)),
-                    color = Color(0xFF4ADE80),
-                    trackColor = Color.White.copy(alpha = 0.2f),
+                    color = MaterialTheme.colorScheme.secondary,
+                    trackColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -136,9 +136,9 @@ fun FaceScanScreen(
 private fun IconButtonBack(onBack: () -> Unit) {
     IconButton(onClick = onBack) {
         Icon(
-            Icons.Filled.ArrowBack,
+            Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = "Back",
-            tint = Color.White,
+            tint = MaterialTheme.colorScheme.onSurface,
         )
     }
 }
@@ -153,13 +153,38 @@ private fun FaceScanCameraPreview(onResult: (faceCount: Int, metrics: FaceMetric
     val context = LocalContext.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
 
+    // A dedicated thread, not the main executor: FaceLandmarker's detectAsync still does real work
+    // on the calling thread before the result is delivered later (only the RESULT is asynchronous),
+    // and running that on the main executor would jank the preview on every frame.
+    val analyzerExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
+    // ponytail: constructed synchronously during composition, which loads the ~3.7 MB model and
+    // builds its native graph on the main thread — a one-time hitch of well under a second on this
+    // screen's own entry transition, not a per-frame cost. Move to a LaunchedEffect on
+    // Dispatchers.Default, holding a nullable FaceAnalyzer? until ready, if that hitch ever shows up
+    // in a real frame-time trace.
+    val faceAnalyzer = remember { FaceAnalyzer(context, onResult) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            // Releases the loaded model's native graph, and stops the camera from feeding a
+            // detector nobody is reading results from anymore.
+            faceAnalyzer.close()
+            analyzerExecutor.shutdown()
+            runCatching { cameraProviderFuture.get().unbindAll() }
+        }
+    }
+
     val imageAnalyzer = remember {
         ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            // MediaPipe's live-stream detectAsync path only accepts an RGBA_8888-backed
+            // android.media.Image -- confirmed by an actual crash on-device:
+            // "UnsupportedOperationException: Android media image must use RGBA_8888 config" out
+            // of AndroidPacketCreator.createImage. The default output here is YUV_420_888 (what ML
+            // Kit was fine with), which this specific MediaPipe code path rejects outright.
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .build()
-            .also { analysis ->
-                analysis.setAnalyzer(ContextCompat.getMainExecutor(context), FaceAnalyzer(onResult))
-            }
+            .also { analysis -> analysis.setAnalyzer(analyzerExecutor, faceAnalyzer) }
     }
 
     AndroidView(

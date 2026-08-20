@@ -32,15 +32,34 @@ import kotlin.math.roundToInt
 fun TodayScreen(
     onNavigateToWeeklyReview: () -> Unit = {},
     onNavigateToLiveSession: (exId: String) -> Unit = {},
+    /** The action a notification was tapped for, so the tap lands on the thing it asked about. */
+    openActionId: String? = null,
     viewModel: TodayViewModel = viewModel(factory = androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.getInstance(LocalContext.current.applicationContext as Application))
 ) {
     val state by viewModel.dashboardState.collectAsState()
-    
+
     var showHydrationSheet by remember { mutableStateOf(false) }
     var showSkinSheet by remember { mutableStateOf(false) }
     var showMealSheet by remember { mutableStateOf(false) }
     var showWorkoutSheet by remember { mutableStateOf(false) }
     var showSleepSheet by remember { mutableStateOf(false) }
+    var showWeightSheet by remember { mutableStateOf(false) }
+
+    // A notification that asks a question and then drops you on a dashboard has wasted the
+    // interruption. The actionId the coach already puts in the notification opens the sheet that
+    // answers it. "build_baseline" and the GOING_WELL ids open nothing — there is no one sheet that
+    // answers "start somewhere", and a tap must never open a sheet at random.
+    LaunchedEffect(Unit) { viewModel.syncHealthConnect() }
+
+    LaunchedEffect(openActionId) {
+        when (openActionId) {
+            "meal_log" -> showMealSheet = true
+            "hydrate_now" -> showHydrationSheet = true
+            "skin_log" -> showSkinSheet = true
+            "hormone_sleep" -> showSleepSheet = true
+            "train_today" -> showWorkoutSheet = true
+        }
+    }
 
     if (showHydrationSheet) {
         HydrationSheet(
@@ -57,6 +76,11 @@ fun TodayScreen(
             onDismiss = { showMealSheet = false },
             onLog = { foodId, qty ->
                 viewModel.logFood(foodId, qty)
+                showMealSheet = false
+            },
+            onParse = { text -> viewModel.parseMeal(text) },
+            onLogAll = { items ->
+                viewModel.logFoods(items)
                 showMealSheet = false
             }
         )
@@ -80,17 +104,30 @@ fun TodayScreen(
                 onNavigateToLiveSession(exId)
             },
             onManualLog = { exId, reps, load ->
-                viewModel.logTraining(exId, reps, load)
+                // Without the real profile, Coach's plate-snapped progression silently used the
+                // default plate set for every user regardless of what they actually own.
+                viewModel.logTraining(exId, reps, load, profile = state.trainingProfile)
                 showWorkoutSheet = false
             }
         )
     }
     
+    if (showWeightSheet) {
+        WeightSheet(
+            lastKg = state.weightTrend?.now,
+            onDismiss = { showWeightSheet = false },
+            onLog = { kg ->
+                viewModel.logWeight(kg)
+                showWeightSheet = false
+            },
+        )
+    }
+
     if (showSleepSheet) {
         SleepSheet(
             onDismiss = { showSleepSheet = false },
-            onLog = { hours ->
-                viewModel.logSleep(hours)
+            onLog = { bed, wake ->
+                viewModel.logSleep(bed, wake)
                 showSleepSheet = false
             }
         )
@@ -114,17 +151,13 @@ fun TodayScreen(
             Column {
                 Text(
                     text = LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMM d")),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = 1.sp
                 )
                 Text(
                     text = "Today",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onSurface,
-                    letterSpacing = (-0.5).sp
                 )
             }
             Box(
@@ -136,8 +169,7 @@ fun TodayScreen(
                 Text(
                     text = state.profile?.name?.take(1)?.uppercase() ?: "U",
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
+                    style = MaterialTheme.typography.labelLarge,
                 )
             }
         }
@@ -186,8 +218,17 @@ fun TodayScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text(ex.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = if (isDone) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface)
-                                Text("${ex.sets} sets x ${ex.reps} reps @ ${if (ex.load > 0) "${ex.load}kg" else "bodyweight"}", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                                Text(ex.name, style = MaterialTheme.typography.titleMedium, color = if (isDone) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    "${ex.sets} sets x ${ex.reps} reps @ " + if (ex.load > 0)
+                                        // The number alone leaves the actual loading as homework at
+                                        // the rack. This is the same Planner.loadout() that Coach
+                                        // already snaps progression to -- now shown, not just used.
+                                        com.example.domain.Planner.loadoutText(ex.load, state.trainingProfile)
+                                    else "bodyweight",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                )
                             }
                             if (isDone) {
                                 Icon(Icons.Filled.CheckCircle, contentDescription = "Done", tint = MaterialTheme.colorScheme.primary)
@@ -228,7 +269,15 @@ fun TodayScreen(
             // 4. NUTRITION
             DashboardSectionTitle("Nutrition")
             val nonWaterMeals = state.todayMeals.filter { it.foodId != "water" }
-            val mealDesc = if (nonWaterMeals.isEmpty()) "No meals logged yet." else "${nonWaterMeals.size} meals/snacks logged."
+            // The macro total includes water/coffee/chai too (a chai's calories are real), even
+            // though the meal COUNT above only counts food — a drink is not a "meal logged".
+            val mealDesc = if (nonWaterMeals.isEmpty()) {
+                "No meals logged yet."
+            } else {
+                val m = state.todayMacros
+                "${nonWaterMeals.size} meals/snacks · ${m.kcal} kcal, ${m.protein}g protein, " +
+                    "${m.carbs}g carbs, ${m.fat}g fat"
+            }
             DashboardCard(
                 icon = Icons.Filled.Restaurant,
                 title = "Food Logging",
@@ -237,13 +286,130 @@ fun TodayScreen(
                 buttonText = "Log Meal"
             )
 
+            // Only what's actually known — unknownServings items (whole fruit, rice, etc.) are
+            // never silently counted as zero sugar, see Nutrition.SugarStatus's own doc comment.
+            state.sugarTargetGrams?.let { target ->
+                val s = state.sugarStatus
+                val unknownNote = if (s.unknownServings > 0) " (${s.unknownServings} logged item${if (s.unknownServings == 1) "" else "s"} not sugar-tracked)" else ""
+                Text(
+                    "Sugar: ${s.knownGrams}g known of a ${target}g target$unknownNote",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+
+            // 4b. FAT LOSS / BODY COMPOSITION
+            //
+            // The honest version of "help me lose fat": a target you confirmed, today's intake
+            // against it, and the scale correcting the target over weeks. No body-fat percentage
+            // anywhere -- a scale measures MASS, and mass is not composition. Nothing here targets
+            // fat in one place either: spot reduction is not a thing, so there is no "face fat"
+            // reading to show, only whole-body change over time.
+            state.targets?.let { t ->
+                DashboardSectionTitle(
+                    when (state.phase) {
+                        Nutrition.Phase.CUT -> "Fat loss"
+                        Nutrition.Phase.GAIN -> "Gaining"
+                        Nutrition.Phase.MAINTAIN -> "Body composition"
+                    }
+                )
+
+                // Phase picker: cutting, holding, gaining. Separate from the training scheme.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        Nutrition.Phase.CUT to "Lose fat",
+                        Nutrition.Phase.MAINTAIN to "Hold",
+                        Nutrition.Phase.GAIN to "Gain",
+                    ).forEach { (p, label) ->
+                        FilterChip(
+                            selected = state.phase == p,
+                            onClick = { viewModel.setPhase(p) },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+
+                val eaten = state.todayMacros
+                val kcalLeft = t.kcal - eaten.kcal
+                val proteinLeft = t.protein - eaten.protein
+                DashboardCardWithProgress(
+                    icon = Icons.Filled.Restaurant,
+                    title = if (kcalLeft >= 0) "$kcalLeft kcal left today" else "${-kcalLeft} kcal over",
+                    subtitle = "${eaten.kcal} of ${t.kcal} kcal - protein ${eaten.protein}/${t.protein}g" +
+                        if (proteinLeft > 0) " ($proteinLeft to go)" else " (hit)",
+                    progress = (eaten.kcal.toFloat() / t.kcal).coerceIn(0f, 1f),
+                    onClick = { showMealSheet = true },
+                    buttonText = "Log Food"
+                )
+
+                // The weigh-in, and the trend that is the only real check on the target above.
+                val trend = state.weightTrend
+                val trendDesc = when {
+                    trend?.now == null -> "No weigh-in yet. This is what makes the calorie target checkable."
+                    trend.changeKg == null -> "${trend.now} kg. One more weigh-in and this starts showing a trend."
+                    trend.changeKg == 0.0 -> "${trend.now} kg, flat over ${trend.days} days (${trend.points} weigh-ins)."
+                    trend.changeKg!! < 0 -> "${trend.now} kg, down ${-trend.changeKg!!} kg over ${trend.days} days."
+                    else -> "${trend.now} kg, up ${trend.changeKg} kg over ${trend.days} days."
+                }
+                DashboardCard(
+                    icon = Icons.Filled.MonitorWeight,
+                    title = "Weight",
+                    subtitle = trendDesc,
+                    onClick = { showWeightSheet = true },
+                    buttonText = if (trend?.now == null) "Log Weight" else "Update"
+                )
+
+                // The one line about the last four weeks, and only when there is something real to
+                // say -- coachLine already refuses to speak from too little data.
+                state.nutritionCoachLine?.let { line ->
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                }
+
+                // The scale's correction to the target. Shown only when the data earns it, and it is
+                // never applied without this button being pressed.
+                state.kcalSuggestion?.let { sg ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        ),
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("FROM YOUR SCALE", style = MaterialTheme.typography.labelSmall)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Target ${sg.from} to ${sg.to} kcal",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "You are ${sg.reason}. You have actually been eating ${sg.eating} a day.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(onClick = { viewModel.acceptKcalSuggestion(sg.to) }) {
+                                Text("Use ${sg.to} kcal")
+                            }
+                        }
+                    }
+                }
+            }
+
             // 5. HYDRATION
             DashboardSectionTitle("Hydration")
             val hydrationPct = if (state.waterTarget > 0) (state.waterIntake.toDouble() / state.waterTarget) else 0.0
             DashboardCardWithProgress(
                 icon = Icons.Filled.LocalDrink,
                 title = "Water Intake",
-                subtitle = "${state.waterIntake} ml / ${if (state.waterTarget > 0) state.waterTarget.toString() + " ml" else "Target not set"}",
+                subtitle = "${state.waterIntake} ml / ${if (state.waterTarget > 0) state.waterTarget.toString() + " ml" else "Target not set"}" +
+                    (state.hydrationVsBaseline?.let { " · $it" } ?: ""),
                 progress = hydrationPct.toFloat().coerceIn(0f, 1f),
                 onClick = { showHydrationSheet = true },
                 buttonText = "Add Water"
@@ -298,10 +464,9 @@ fun TodayScreen(
 fun DashboardSectionTitle(title: String) {
     Text(
         text = title.uppercase(),
-        fontSize = 12.sp,
+        style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        letterSpacing = 1.sp,
         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp, start = 8.dp)
     )
 }
@@ -339,8 +504,8 @@ fun DashboardCard(
                 }
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
-                    Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = onColor)
-                    Text(text = subtitle, fontSize = 14.sp, color = onColor.copy(alpha = 0.7f))
+                    Text(text = title, style = MaterialTheme.typography.titleMedium, color = onColor)
+                    Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = onColor.copy(alpha = 0.75f))
                 }
             }
             TextButton(onClick = onClick) {
@@ -381,8 +546,8 @@ fun DashboardCardWithProgress(
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
-                        Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Text(text = subtitle, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        Text(text = title, style = MaterialTheme.typography.titleMedium)
+                        Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 TextButton(onClick = onClick) {
@@ -425,37 +590,37 @@ fun HealthCoachCard(
         ) {
             Box(
                 modifier = Modifier
-                    .background(MaterialTheme.colorScheme.onPrimaryContainer, CircleShape)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape)
                     .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = "COACH TIP",
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.5).sp
+                    text = "DO THIS NEXT",
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    style = MaterialTheme.typography.labelSmall,
                 )
             }
             Text(
-                text = nba?.tier?.name ?: "ANALYZING",
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace
+                text = when (nba?.tier) {
+                    HealthCoachEngine.Tier.ACTIONABLE_NOW -> "NOW"
+                    HealthCoachEngine.Tier.DATA_COLLECTION -> "TO LOG"
+                    HealthCoachEngine.Tier.GOING_WELL -> "ON TRACK"
+                    null -> "READING"
+                },
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.labelSmall,
             )
         }
         
         Text(
             text = nba?.title ?: "All caught up for now.",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onPrimaryContainer,
-            lineHeight = 22.sp
         )
         
         Text(
             text = nba?.reason ?: "Your data looks great.",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
         )
         
         if (nba?.tier == HealthCoachEngine.Tier.ACTIONABLE_NOW || nba?.tier == HealthCoachEngine.Tier.DATA_COLLECTION) {
@@ -477,26 +642,26 @@ fun HealthCoachCard(
                         }
                     },
                     modifier = Modifier.weight(1f).height(40.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.large,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Text(text = "Start", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "Start", style = MaterialTheme.typography.labelLarge)
                 }
                 Button(
                     onClick = onLater,
                     modifier = Modifier.height(40.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.5f), contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                    shape = MaterialTheme.shapes.large,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onSurfaceVariant, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
                 ) {
-                    Text(text = "Later", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "Later", style = MaterialTheme.typography.labelLarge)
                 }
                 Button(
                     onClick = onSkip,
                     modifier = Modifier.height(40.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.5f), contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                    shape = MaterialTheme.shapes.large,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onSurfaceVariant, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
                 ) {
-                    Text(text = "Skip", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "Skip", style = MaterialTheme.typography.labelLarge)
                 }
             }
         }

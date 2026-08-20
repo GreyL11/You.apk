@@ -1,42 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The mark: a plotted line rising, with the newest point called out.
+     Says "measured, and moving" without drawing a dumbbell, and it is the app's actual subject — a
+     record that reads itself back to you, not a gym.
+
+     Every coordinate sits inside the adaptive-icon safe zone: launchers mask the outer 18% and round
+     masks cut a 72dp circle out of the 108dp canvas, so nothing here strays more than ~34 units from
+     the centre at (54,54). The previous drawing ran from x=14 to x=94 and lost its end caps on any
+     round launcher.
+
+     The cobalt is the app's primary accent, and the point is drawn in the light on-surface tone so
+     the head of the line stays the brightest thing in the mark at 32px. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Beige Arc -->
     <path
-        android:pathData="M 80,39 A 30,30 0 1 1 39,28"
-        android:strokeColor="#E6DED5"
-        android:strokeWidth="10"
-        android:strokeLineCap="butt"
+        android:pathData="M30,70 L46,56 L60,62 L76,42"
+        android:strokeColor="#4C8DFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
         android:fillColor="#00000000" />
 
-    <!-- Left Vertical Bar -->
     <path
-        android:pathData="M 24,38 L 24,70"
-        android:strokeColor="#FF4081"
-        android:strokeWidth="6"
-        android:strokeLineCap="round" />
-
-    <!-- Right Vertical Bar -->
-    <path
-        android:pathData="M 84,38 L 84,70"
-        android:strokeColor="#FF4081"
-        android:strokeWidth="6"
-        android:strokeLineCap="round" />
-
-    <!-- Horizontal Bar -->
-    <path
-        android:pathData="M 16,54 L 92,54"
-        android:strokeColor="#FF4081"
-        android:strokeWidth="8"
-        android:strokeLineCap="round" />
-
-    <!-- Darker Intersections -->
-    <path
-        android:pathData="M 21,50 h 6 v 8 h -6 z M 81,50 h 6 v 8 h -6 z"
-        android:fillColor="#C2185B" />
-
+        android:pathData="M76,42 m-8.5,0 a8.5,8.5 0 1,0 17,0 a8.5,8.5 0 1,0 -17,0"
+        android:fillColor="#E8EAED" />
 </vector>

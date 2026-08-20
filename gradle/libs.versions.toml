@@ -1,4 +1,6 @@
 [versions]
+mediapipeTasksVision = "0.10.14"
+healthConnectClient = "1.1.0"
 agp = "9.1.1"
 coreKtx = "1.18.0"
 junit = "4.13.2"
@@ -100,6 +102,10 @@ androidx-credentials = { group = "androidx.credentials", name = "credentials", v
 androidx-credentials-play-services = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 
+
+androidx-health-connect-client = { group = "androidx.health.connect", name = "connect-client", version.ref = "healthConnectClient" }
+
+mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipeTasksVision" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

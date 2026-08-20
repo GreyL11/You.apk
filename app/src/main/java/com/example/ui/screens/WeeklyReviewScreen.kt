@@ -161,16 +161,16 @@ fun WeeklyReviewScreen(onBack: () -> Unit) {
                 ReviewSection("HORMONAL LIFESTYLE", state!!.hormonalLifestyle)
                 
                 Spacer(modifier = Modifier.height(8.dp))
-                Divider()
+                HorizontalDivider()
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                Text("WHAT WENT WELL", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(state!!.whatWentWell, fontSize = 16.sp)
+                Text("WHAT WENT WELL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(state!!.whatWentWell, style = MaterialTheme.typography.bodyLarge)
                 
                 Spacer(modifier = Modifier.height(4.dp))
                 
-                Text("WHAT NEEDS ATTENTION", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(state!!.whatNeedsAttention, fontSize = 16.sp)
+                Text("WHAT NEEDS ATTENTION", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(state!!.whatNeedsAttention, style = MaterialTheme.typography.bodyLarge)
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
@@ -179,9 +179,9 @@ fun WeeklyReviewScreen(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("NEXT WEEK'S FOCUS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("NEXT WEEK'S FOCUS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(state!!.nextWeekFocus, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text(state!!.nextWeekFocus, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
                 }
             }
@@ -192,7 +192,7 @@ fun WeeklyReviewScreen(onBack: () -> Unit) {
 @Composable
 fun ReviewSection(title: String, content: String) {
     Column {
-        Text(title, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(content, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+        Text(title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(content, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
     }
 }

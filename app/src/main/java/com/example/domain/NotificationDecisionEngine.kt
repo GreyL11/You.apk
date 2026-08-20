@@ -52,7 +52,18 @@ object NotificationDecisionEngine {
                 // Ignore parse errors
             }
         }
-        
+
+        // 6. Is a better hour still coming today?
+        //
+        // The hourly worker asks this up to fourteen times a day, and firing at the first legal
+        // moment is why a hydration reminder lands at 07:00 for someone who has never once done it
+        // before lunch. [AdaptationEngine] answers from their own recorded completions, and can only
+        // ever DELAY within the same day — once their usual window has passed it stops asking to
+        // wait, so this can never eat a day's reminder entirely.
+        if (AdaptationEngine.shouldWaitForBetterHour(candidate.actionId, recentOutcomes, now)) {
+            return false
+        }
+
         return true
     }
 }

@@ -37,16 +37,16 @@ fun FaceScanResultScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F1115))
+            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp)
             .verticalScroll(rememberScrollState()),
     ) {
         Spacer(modifier = Modifier.height(24.dp))
-        Text("SCAN RESULT", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+        Text("SCAN RESULT", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
         Spacer(modifier = Modifier.height(16.dp))
 
         if (latest == null) {
-            Text("No scan found.", color = Color.White.copy(alpha = 0.6f))
+            Text("No scan found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             // Re-diagnosing the same stored metrics is the single source of truth for these labels
             // (no duplicated threshold literals) — always "good" here since only a scan that
@@ -75,10 +75,10 @@ fun FaceScanResultScreen(
                 when (skinAnalysis) {
                     is SkinAnalysis.NotAvailable -> Text(
                         "Skin trend analysis requires additional image-analysis capability. This app does not perform medical or dermatological diagnosis.",
-                        color = Color.White.copy(alpha = 0.6f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    is SkinAnalysis.Available -> Text(skinAnalysis.summary, color = Color.White)
+                    is SkinAnalysis.Available -> Text(skinAnalysis.summary, color = MaterialTheme.colorScheme.onSurface)
                 }
             }
 
@@ -100,11 +100,11 @@ fun FaceScanResultScreen(
 private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF161920)),
-        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = MaterialTheme.shapes.large,
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Text(title, color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Spacer(modifier = Modifier.height(12.dp))
             content()
         }
@@ -114,7 +114,7 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
 @Composable
 private fun MetricRow(label: String, value: String) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.bodyMedium)
-        Text(value, color = Color.White, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        Text(value, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
     }
 }

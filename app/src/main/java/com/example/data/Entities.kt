@@ -86,7 +86,13 @@ data class DayRow(
     val wake: String?,
     val sleeps: String?, // JSON List<SleepBlock>
     val plans: String?, // JSON List<Plan>
-    val skin: String? // JSON SkinData
+    val skin: String?, // JSON SkinData
+    /**
+     * Steps for the day, imported from Health Connect. Null means not imported, which is NOT zero
+     * steps — the whole app treats absent and zero as different things, and a day the phone was left
+     * on a desk is not a day nobody walked.
+     */
+    val steps: Int? = null
 )
 
 @Entity(tableName = "check_entity") // PHQ-9/GAD-7
@@ -119,4 +125,24 @@ data class ActionOutcome(
 data class FaceCapture(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val data: String // JSON of the whole capture to easily store
+)
+
+/**
+ * A real measured lab value, typed in from a blood test.
+ *
+ * This is the only place in the app a hormone number may exist, and it exists because a person read
+ * it off their own results — nothing here is derived, estimated, or inferred from logged behaviour.
+ * The lifestyle inputs on the hormonal screen sit BESIDE these, never instead of them.
+ */
+@Entity(tableName = "lab_result")
+data class LabResult(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    /** Date of the draw, "yyyy-MM-dd" — the draw date matters, not when it was typed in. */
+    val at: String,
+    /** e.g. "totalTestosterone", "freeTestosterone", "shbg", "vitaminD". */
+    val marker: String,
+    val value: Double,
+    /** As printed on the report: "ng/dL", "nmol/L", "pg/mL". Never converted behind your back. */
+    val unit: String,
+    val note: String? = null
 )

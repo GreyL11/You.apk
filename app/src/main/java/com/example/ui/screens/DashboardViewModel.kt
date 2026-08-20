@@ -6,10 +6,13 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import com.example.domain.Coach
 import com.example.domain.EXERCISES
+import com.example.domain.HealthStateEngine
+import com.example.domain.TrainingCoverageEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
@@ -39,7 +42,9 @@ data class DashboardUiState(
     ),
     val selectedTimeRange: TimeRange = TimeRange("28D", 28),
     val strengthProgress: List<StrengthProgress> = emptyList(),
-    val filteredStrengthProgress: List<StrengthProgress> = emptyList()
+    val filteredStrengthProgress: List<StrengthProgress> = emptyList(),
+    val healthSnapshot: HealthStateEngine.Snapshot? = null,
+    val pushPullReading: TrainingCoverageEngine.PushPullReading? = null,
 )
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -73,7 +78,29 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             
             val weights = db.weightDao().getAllSync()
             val logs = db.logEntryDao().getAllSync()
-            
+
+            // Real per-domain state, and the real push/pull training-volume read — see
+            // HealthStateEngine/TrainingCoverageEngine's own doc comments for why each state is
+            // derived, never a fabricated score.
+            val now = LocalDateTime.now()
+            val dayKey = now.toLocalDate().toString()
+            val allDayRows = db.dayRowDao().getAllSync()
+            val allMeals = db.mealDao().getAllSync()
+            val healthSnapshot = HealthStateEngine.evaluate(
+                HealthStateEngine.Inputs(
+                    now = now,
+                    todayRow = allDayRows.find { it.dayKey == dayKey },
+                    recentMeals = allMeals.filter { it.at.take(10) == dayKey },
+                    allMeals = allMeals,
+                    recentLogEntries = logs.filter { it.at.take(10) == dayKey },
+                    allLogEntries = logs,
+                    allDayRows = allDayRows,
+                    profile = db.profileDao().getProfileSync(),
+                ),
+            )
+            val pushPullReading = TrainingCoverageEngine.pushPullBalance(logs)
+
+
             // 1. Process Weight History
             val weightPoints = weights.mapNotNull { 
                 try {
@@ -134,7 +161,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val initialState = DashboardUiState(
                 isLoading = false,
                 weightHistory = weightPoints,
-                strengthProgress = strengthList
+                strengthProgress = strengthList,
+                healthSnapshot = healthSnapshot,
+                pushPullReading = pushPullReading,
             )
             _uiState.value = initialState
             setTimeRange(initialState.selectedTimeRange)

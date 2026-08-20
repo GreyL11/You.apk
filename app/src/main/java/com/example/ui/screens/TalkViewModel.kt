@@ -69,14 +69,53 @@ class TalkViewModel(application: Application) : AndroidViewModel(application) {
             )
             
             if (todayRow != null) {
+                // Sleep goes in as numbers, not as the raw JSON blob it is stored in: the model
+                // cannot be asked to parse a string and then be held to the figures inside it. Main
+                // and total stay separate for the same reason the engine keeps them apart — a short
+                // night plus a nap is not a long night.
+                val sleep = com.example.domain.MoodInsights.sleepSummary(todayRow)
                 evidenceMap["today"] = mapOf(
                     "mood" to todayRow.mood,
-                    "sleeps" to todayRow.sleeps,
+                    "sleep" to if (sleep.main == null) "Not logged today." else mapOf(
+                        "mainHours" to sleep.main,
+                        "totalHours" to sleep.total,
+                        "naps" to sleep.naps,
+                        "wokeAt" to todayRow.wake,
+                    ),
                     "skin" to todayRow.skin
                 )
             } else {
                 evidenceMap["today"] = "Absent. No check-in completed today."
             }
+
+            // The 28-day lifestyle read, so "what should I do about my sleep" is answered from the
+            // record rather than from today alone. The engine's own line rides along with it: the
+            // model is being asked to talk about a decision, not to make one.
+            val lifestyle = com.example.domain.TInputs.read(
+                rows = db.dayRowDao().getAllSync(),
+                weights = db.weightDao().getAllSync(),
+                logs = db.logEntryDao().getAllSync(),
+                rounds = db.roundDao().getAllSync(),
+                today = LocalDateTime.now().toLocalDate(),
+            )
+            evidenceMap["lifestyle_28d"] = mapOf(
+                "sleep" to mapOf(
+                    "verdict" to lifestyle.sleep.verdict,
+                    "mainAvgHours" to lifestyle.sleep.avg,
+                    "nightsLogged" to lifestyle.sleep.nights,
+                ),
+                "wake" to lifestyle.wake?.let {
+                    mapOf(
+                        "usual" to it.median,
+                        "spreadHours" to it.spreadHours,
+                        "regular" to it.regular,
+                    )
+                },
+                "trainingDays" to lifestyle.training.days,
+                "weightChangeKg" to lifestyle.weight.kg,
+                "app_decided_next" to lifestyle.advice.text,
+                "limitation" to com.example.domain.TInputs.HORMONAL_BOUNDARY,
+            )
             if (recentLogs.isNotEmpty()) {
                 evidenceMap["recent_workouts"] = recentLogs.map { mapOf("exId" to it.exId, "reps" to it.reps, "load" to it.load) }
             }
@@ -93,6 +132,7 @@ class TalkViewModel(application: Application) : AndroidViewModel(application) {
             
             val aiMsg = ChatMessage(role = "model", content = replyText ?: "I'm sorry, I cannot connect right now.", at = LocalDateTime.now().toString())
             db.chatMessageDao().insert(aiMsg)
+            db.chatMessageDao().enforceCap() // defined but never invoked before — chat_message grew unbounded
             _messages.value = _messages.value + aiMsg
             _isTyping.value = false
         }

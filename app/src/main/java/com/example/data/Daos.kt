@@ -164,3 +164,18 @@ interface FaceCaptureDao {
     @Query("DELETE FROM face_capture")
     suspend fun deleteAll()
 }
+
+@Dao
+interface LabResultDao {
+    @Query("SELECT * FROM lab_result ORDER BY at ASC")
+    suspend fun getAllSync(): List<LabResult>
+
+    @Query("SELECT * FROM lab_result WHERE marker = :marker ORDER BY at ASC")
+    suspend fun getByMarkerSync(marker: String): List<LabResult>
+
+    @Insert
+    suspend fun insert(result: LabResult)
+
+    @Query("DELETE FROM lab_result WHERE id = :id")
+    suspend fun delete(id: Int)
+}

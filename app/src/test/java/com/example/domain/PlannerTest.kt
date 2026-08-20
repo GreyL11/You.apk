@@ -96,4 +96,12 @@ class PlannerTest {
         assertNull(Planner.today(0, restDayProfile)) // Sunday is a rest day on a 3-day split
         assertNotNull(Planner.today(1, restDayProfile)) // Monday trains
     }
+
+    @Test
+    fun `the plate-size candidate list a profile editor offers is the default plate set`() {
+        // Not the same field, but they must not drift apart: the candidates a person picks their
+        // real plates from should be exactly the set TrainingProfile() assumes when nobody has
+        // picked anything yet.
+        assertEquals(TrainingProfile().plates, Planner.PLATE_SIZES)
+    }
 }

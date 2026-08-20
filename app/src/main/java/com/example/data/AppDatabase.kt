@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -18,9 +20,10 @@ import androidx.room.RoomDatabase
         CheckEntity::class,
         ChatMessage::class,
         ActionOutcome::class,
-        FaceCapture::class
+        FaceCapture::class,
+        LabResult::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -36,10 +39,34 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chatMessageDao(): ChatMessageDao
     abstract fun actionOutcomeDao(): ActionOutcomeDao
     abstract fun faceCaptureDao(): FaceCaptureDao
+    abstract fun labResultDao(): LabResultDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        /**
+         * v1 -> v2: Health Connect step counts on the day row, and a table for lab results typed in
+         * from a real blood test.
+         *
+         * Written out rather than falling back to a destructive migration. Someone using this app has
+         * months of sleep, meals and sessions in it — dropping that to add two columns would destroy
+         * the only thing the coach reasons over, and it would do it silently on upgrade.
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `day_row` ADD COLUMN `steps` INTEGER")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `lab_result` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`at` TEXT NOT NULL, " +
+                        "`marker` TEXT NOT NULL, " +
+                        "`value` REAL NOT NULL, " +
+                        "`unit` TEXT NOT NULL, " +
+                        "`note` TEXT)"
+                )
+            }
+        }
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -47,7 +74,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "gym_trainer_database"
-                ).build()
+                ).addMigrations(MIGRATION_1_2).build()
                 INSTANCE = instance
                 instance
             }

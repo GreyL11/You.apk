@@ -24,6 +24,14 @@ data class TrainingProfile(
 data class Loadout(val bar: Double, val perSide: List<Pair<Double, Int>>, val actual: Double, val exact: Boolean, val under: Boolean = false)
 
 object Planner {
+    /**
+     * The plate denominations a profile-editing UI offers as choices -- port of the legacy
+     * `app.js` PLATE_SIZES list. Not every gym's actual set: it is the CANDIDATE list a person
+     * picks their real one from. [TrainingProfile.plates] is what they picked, and can be any
+     * subset of this.
+     */
+    val PLATE_SIZES = listOf(25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25)
+
     private fun barOf(p: TrainingProfile) = p.bar
     private fun platesOf(p: TrainingProfile) = if (p.plates.isNotEmpty()) p.plates else TrainingProfile().plates
 

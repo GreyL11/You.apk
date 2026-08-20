@@ -29,6 +29,8 @@ import kotlin.math.roundToInt
 @Composable
 fun DashboardScreen(
     onNavigateToFaceScan: () -> Unit = {},
+    onNavigateToSkinInsights: () -> Unit = {},
+    onNavigateToHormonal: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.getInstance(LocalContext.current.applicationContext as Application))
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -36,7 +38,7 @@ fun DashboardScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F1115)) // Premium dark background
+            .background(MaterialTheme.colorScheme.background) // Premium dark background
             .padding(horizontal = 16.dp)
             .verticalScroll(rememberScrollState())
     ) {
@@ -45,17 +47,20 @@ fun DashboardScreen(
         Text(
             text = "YOU",
             style = MaterialTheme.typography.titleSmall,
-            color = Color.White.copy(alpha = 0.5f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
         
         Spacer(modifier = Modifier.height(24.dp))
-        
+
+        state.healthSnapshot?.let { HealthSnapshotCard(it, state.pushPullReading) }
+        Spacer(modifier = Modifier.height(24.dp))
+
         Text(
             text = "STATS - PROGRESS",
             style = MaterialTheme.typography.labelMedium,
-            color = Color.White.copy(alpha = 0.7f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.5.sp
         )
@@ -86,20 +91,20 @@ fun DashboardScreen(
             // Empty state for strength
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF161920)),
-                shape = RoundedCornerShape(12.dp)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = MaterialTheme.shapes.large
             ) {
                 Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "NO TRAINING DATA IN PERIOD",
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelMedium,
                         letterSpacing = 1.sp
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "Log workouts to see your strength progress.",
-                        color = Color.White.copy(alpha = 0.4f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
@@ -112,31 +117,99 @@ fun DashboardScreen(
         Text(
             text = "FACE & SKIN",
             style = MaterialTheme.typography.labelMedium,
-            color = Color.White.copy(alpha = 0.7f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.5.sp
         )
         Spacer(modifier = Modifier.height(16.dp))
-        Card(
-            modifier = Modifier.fillMaxWidth().clickable { onNavigateToFaceScan() },
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF161920)),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Guided Face Scan", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Check capture quality and track real scan history.", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall)
-                }
-                Text("→", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.headlineSmall)
-            }
-        }
+        DashboardEntryCard("Guided Face Scan", "Check capture quality and track real scan history.", onNavigateToFaceScan)
+        Spacer(modifier = Modifier.height(12.dp))
+        DashboardEntryCard("Skin Insights", "What your own log shows against sleep, sugar, dairy and training.", onNavigateToSkinInsights)
+        Spacer(modifier = Modifier.height(12.dp))
+        DashboardEntryCard("Hormonal Lifestyle", "The lifestyle inputs with real evidence behind them.", onNavigateToHormonal)
 
         Spacer(modifier = Modifier.height(48.dp))
+    }
+}
+
+/** Real per-domain state from [HealthStateEngine] — never one fake combined score. Each domain is
+ *  independently ON_TRACK / WATCH / NEEDS_ATTENTION / INSUFFICIENT_DATA from what's actually
+ *  logged; the push/pull line only appears once there's enough real training volume to say it. */
+@Composable
+private fun HealthSnapshotCard(
+    snapshot: com.example.domain.HealthStateEngine.Snapshot,
+    pushPull: com.example.domain.TrainingCoverageEngine.PushPullReading?,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text("TODAY", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Spacer(modifier = Modifier.height(12.dp))
+            HealthStateRow("Nutrition", snapshot.nutrition)
+            HealthStateRow("Hydration", snapshot.hydration)
+            HealthStateRow("Sleep", snapshot.sleep)
+            HealthStateRow("Training", snapshot.training)
+            HealthStateRow("Skin routine", snapshot.skinRoutine)
+
+            if (pushPull != null && pushPull.balance != com.example.domain.TrainingCoverageEngine.Balance.INSUFFICIENT_DATA
+                && pushPull.balance != com.example.domain.TrainingCoverageEngine.Balance.BALANCED
+            ) {
+                Spacer(modifier = Modifier.height(12.dp))
+                val focus = if (pushPull.balance == com.example.domain.TrainingCoverageEngine.Balance.PULL_NEEDS_WORK) "pulling" else "pushing"
+                Text(
+                    "Your $focus volume has been lower than the other side recently.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthStateRow(label: String, state: com.example.domain.HealthStateEngine.State) {
+    val (dotColor, stateLabel) = when (state) {
+        com.example.domain.HealthStateEngine.State.ON_TRACK -> Color(0xFF4ADE80) to "On track"
+        com.example.domain.HealthStateEngine.State.WATCH -> Color(0xFFFBBF24) to "Watch"
+        com.example.domain.HealthStateEngine.State.NEEDS_ATTENTION -> Color(0xFFF87171) to "Needs attention"
+        com.example.domain.HealthStateEngine.State.INSUFFICIENT_DATA -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f) to "Not enough data"
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(8.dp).background(dotColor, androidx.compose.foundation.shape.CircleShape))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stateLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun DashboardEntryCard(title: String, subtitle: String, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(title, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+            Text("→", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.headlineSmall)
+        }
     }
 }
 
@@ -144,13 +217,13 @@ fun DashboardScreen(
 fun MainChartCard(history: List<ChartPoint>) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF161920)),
-        shape = RoundedCornerShape(12.dp)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = MaterialTheme.shapes.large
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(
                 "BODYWEIGHT",
-                color = Color.White.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
@@ -160,7 +233,7 @@ fun MainChartCard(history: List<ChartPoint>) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     "Start logging your weight to see your trend.",
-                    color = Color.White.copy(alpha = 0.4f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(modifier = Modifier.height(40.dp))
@@ -173,13 +246,12 @@ fun MainChartCard(history: List<ChartPoint>) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
                         text = "${String.format("%.1f", latest)}",
-                        color = Color.White,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = com.example.ui.theme.NumberStyle.copy(fontSize = 28.sp)
                     )
                     Text(
                         text = " KG",
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = 4.dp, start = 4.dp)
                     )
@@ -187,7 +259,12 @@ fun MainChartCard(history: List<ChartPoint>) {
                     if (history.size > 1 && diff != 0.0) {
                         Spacer(modifier = Modifier.width(12.dp))
                         val sign = if (diff > 0) "+" else ""
-                        val color = if (diff < 0) Color(0xFF4ADE80) else Color(0xFFF87171) // Green if lost weight, red if gained (assuming losing is goal, though arbitrary)
+                        // Deliberately uncoloured. This used to paint a loss teal and a gain red, and
+                        // its own comment admitted the assumption was arbitrary: the app knows kilos,
+                        // not body fat, and does not know your goal, so gaining muscle and gaining fat
+                        // are the same number here pointing opposite ways. TInputs reports weight as
+                        // direction only for exactly this reason — a colour here would overrule it.
+                        val color = MaterialTheme.colorScheme.onSurface
                         Text(
                             text = "$sign${String.format("%.1f", diff)}",
                             color = color,
@@ -206,11 +283,11 @@ fun MainChartCard(history: List<ChartPoint>) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(120.dp),
-                        lineColor = Color(0xFF818CF8)
+                        lineColor = MaterialTheme.colorScheme.primary
                     )
                 } else {
                     Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                        Text("More data needed for trend.", color = Color.White.copy(alpha = 0.3f), style = MaterialTheme.typography.labelSmall)
+                        Text("More data needed for trend.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -235,12 +312,12 @@ fun TimeRangeSelector(
                     .weight(1f)
                     .padding(horizontal = 2.dp)
                     .background(
-                        color = if (isSelected) Color(0xFF2D3342) else Color.Transparent,
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                         shape = RoundedCornerShape(6.dp)
                     )
                     .border(
                         width = 1.dp,
-                        color = if (isSelected) Color(0xFF3F475A) else Color.Transparent,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                         shape = RoundedCornerShape(6.dp)
                     )
                     .clickable { onSelect(range) }
@@ -249,7 +326,7 @@ fun TimeRangeSelector(
             ) {
                 Text(
                     text = range.label,
-                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.4f),
+                    color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                 )
@@ -262,13 +339,13 @@ fun TimeRangeSelector(
 fun StrengthProgressCard(progress: StrengthProgress) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF161920)),
-        shape = RoundedCornerShape(12.dp)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = MaterialTheme.shapes.large
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(
                 progress.name.uppercase(),
-                color = Color.White.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
@@ -282,11 +359,11 @@ fun StrengthProgressCard(progress: StrengthProgress) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(60.dp),
-                    lineColor = Color(0xFF34D399) // Emerald green for strength
+                    lineColor = MaterialTheme.colorScheme.secondary // Emerald green for strength
                 )
             } else {
                 Box(modifier = Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) {
-                    Text("More data needed for trend.", color = Color.White.copy(alpha = 0.3f), style = MaterialTheme.typography.labelSmall)
+                    Text("More data needed for trend.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
                 }
             }
             
@@ -297,7 +374,7 @@ fun StrengthProgressCard(progress: StrengthProgress) {
             
             Text(
                 text = "$metricLabel ${progress.currentMax.roundToInt()}$metricUnit",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -306,7 +383,11 @@ fun StrengthProgressCard(progress: StrengthProgress) {
                 val diff = progress.currentMax - progress.previousMax
                 if (diff != 0.0) {
                     val sign = if (diff > 0) "+" else ""
-                    val color = if (diff > 0) Color(0xFF4ADE80) else Color(0xFFF87171)
+                    // Up is a real gain, so it gets the steady-state teal. Down is NOT an error:
+                    // the coach prescribes deloads itself, and painting one red tells the person
+                    // their own plan went wrong.
+                    val color = if (diff > 0) MaterialTheme.colorScheme.secondary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
                     val diffUnit = if (progress.isBodyweight) " REPS" else " KG"
                     Text(
                         text = "$sign${diff.roundToInt()}$diffUnit IN PERIOD",

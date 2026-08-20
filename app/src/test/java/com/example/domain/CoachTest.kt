@@ -88,9 +88,98 @@ class CoachTest {
         val result = Coach.evaluateSession(history, currentReps = 5, currentLoad = 55.0, currentFaultCount = 4)
         
         assertEquals(Coach.Progression.DELOAD, result.progression)
-        // 55.0 * 0.9 = 49.5 -> rounded to nearest 0.5 is 49.5
-        assertEquals(49.5, result.nextLoad, 0.001)
+        // 55.0 * 0.9 = 49.5, and the legacy insights.js round2() takes that to the nearest 2.5 -> 50.0.
+        // 49.5 was the old answer and it is not loadable: a 20 kg bar with 2.5s cannot make it.
+        assertEquals(50.0, result.nextLoad, 0.001)
         assertFalse(result.isClean)
+    }
+
+    // ── reps hit and form clean are separate conditions, and both gate an increase ───────────
+
+    @Test
+    fun `clean form on missed reps does not earn weight`() {
+        // 3 of 15 reps, flawlessly. The old code added weight for this, because INCREASE only ever
+        // checked the fault rate.
+        val result = Coach.evaluateSession(
+            history = emptyList(), currentReps = 3, currentLoad = 60.0, currentFaultCount = 0,
+            exId = "squat", targetReps = 15,
+        )
+        assertEquals(Coach.Progression.HOLD, result.progression)
+        assertEquals("reps missed", result.reason)
+        assertEquals(60.0, result.nextLoad, 0.001)
+        // Clean is still true — it was clean. It just was not enough on its own.
+        assertTrue(result.isClean)
+    }
+
+    @Test
+    fun `hitting the reps with broken form is a different verdict from missing them`() {
+        val result = Coach.evaluateSession(
+            history = emptyList(), currentReps = 5, currentLoad = 60.0, currentFaultCount = 3,
+            exId = "squat", targetReps = 5,
+        )
+        assertEquals(Coach.Progression.HOLD, result.progression)
+        assertEquals("form broke down", result.reason)
+        assertFalse(result.isClean)
+    }
+
+    @Test
+    fun `both conditions met still progresses`() {
+        val result = Coach.evaluateSession(
+            history = emptyList(), currentReps = 5, currentLoad = 60.0, currentFaultCount = 0,
+            exId = "squat", targetReps = 5,
+        )
+        assertEquals(Coach.Progression.INCREASE, result.progression)
+        assertEquals("all reps clean", result.reason)
+    }
+
+    @Test
+    fun `no target to compare against withholds the reps-missed verdict rather than inventing one`() {
+        val result = Coach.evaluateSession(
+            history = emptyList(), currentReps = 5, currentLoad = 60.0, currentFaultCount = 0,
+            exId = "squat", targetReps = null,
+        )
+        assertEquals(Coach.Progression.INCREASE, result.progression)
+        assertEquals(true, result.evidence["repsHit"])
+        assertEquals(null, result.evidence["targetReps"])
+    }
+
+    // ── a fault event is one event, however many braces it contains ─────────────────────────
+
+    @Test
+    fun `a fault event with a nested object counts once, not twice`() {
+        val entry = LogEntry(
+            exId = "squat", at = "", reps = 10, sets = 1, load = 50.0,
+            faultEvents = """[{"rep":3,"joint":{"name":"knee","angle":95}}]""",
+            correctedFrom = null,
+        )
+        // Brace-counting said 2 here. Phantom faults push a clean session into a stall, and a stall
+        // into a deload.
+        assertEquals(1, Coach.faultCountOf(entry))
+        assertTrue(Coach.isExecutionClean(entry.reps, Coach.faultCountOf(entry)))
+    }
+
+    @Test
+    fun `unparseable fault json counts as no faults rather than crashing a verdict`() {
+        val entry = LogEntry(exId = "squat", at = "", reps = 5, sets = 1, load = 50.0, faultEvents = "not json", correctedFrom = null)
+        assertEquals(0, Coach.faultCountOf(entry))
+    }
+
+    // ── the verdict carries the numbers it was drawn from ───────────────────────────────────
+
+    @Test
+    fun `evidence holds the figures the decision actually used`() {
+        val result = Coach.evaluateSession(
+            history = emptyList(), currentReps = 10, currentLoad = 60.0, currentFaultCount = 4,
+            exId = "squat", targetReps = 10,
+        )
+        assertEquals("form broke down", result.reason)
+        // 4/10 = 0.40 against the 0.34 limit: the reason for the conclusion, not the conclusion.
+        assertEquals(0.40, result.evidence["faultsPerRep"] as Double, 0.001)
+        assertEquals(Coach.CLEAN_FAULTS_PER_REP, result.evidence["cleanLimit"] as Double, 0.001)
+        assertEquals(10, result.evidence["totalReps"])
+        assertEquals(4, result.evidence["totalFaults"])
+        assertEquals(60.0, result.evidence["from"] as Double, 0.001)
+        assertEquals(60.0, result.evidence["to"] as Double, 0.001)
     }
 
     @Test

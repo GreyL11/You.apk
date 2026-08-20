@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon layer (Android 13+). The system tints this by alpha, so colour is meaningless here
+     and the point cannot be told apart from the line — it is dropped, and the stroke thickened
+     slightly, leaving the silhouette that still reads as the same rising line. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M30,70 L46,56 L60,62 L76,42"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="11"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+</vector>

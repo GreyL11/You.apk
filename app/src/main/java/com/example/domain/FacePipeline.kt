@@ -29,13 +29,19 @@ object FacePipeline {
         exposureClipFraction: Double,
         luma: Double
     ): FaceCaptureIssue? {
-        if (faceSizeFraction < 0.11) return FaceCaptureIssue.TOO_FAR
-        if (faceSizeFraction > 0.42) return FaceCaptureIssue.TOO_CLOSE
-        if (Math.abs(yawRad) > 0.25 || Math.abs(pitchRad) > 0.20 || Math.abs(rollRad) > 0.30) return FaceCaptureIssue.LOOK_STRAIGHT
-        if (sharpnessVariance < 0.15) return FaceCaptureIssue.HOLD_STILL
-        if (luma < 0.22) return FaceCaptureIssue.TOO_DARK
-        if (luma > 0.82) return FaceCaptureIssue.TOO_BRIGHT
-        if (exposureClipFraction > 0.02) return FaceCaptureIssue.TOO_BRIGHT
+        // Every limit here belongs to FaceQuality, which also owns the metric each one is compared
+        // against. Two copies of a threshold is how the focus gate ended up being checked against a
+        // number computed a different way — a limit is only meaningful beside its own definition.
+        val l = FaceQuality.LIMITS
+        if (faceSizeFraction < l.FACE_MIN) return FaceCaptureIssue.TOO_FAR
+        if (faceSizeFraction > l.FACE_MAX) return FaceCaptureIssue.TOO_CLOSE
+        if (Math.abs(yawRad) > l.YAW_MAX || Math.abs(pitchRad) > l.PITCH_MAX ||
+            Math.abs(rollRad) > l.ROLL_MAX
+        ) return FaceCaptureIssue.LOOK_STRAIGHT
+        if (sharpnessVariance < l.SHARPNESS_MIN) return FaceCaptureIssue.HOLD_STILL
+        if (luma < l.LUMA_MIN) return FaceCaptureIssue.TOO_DARK
+        if (luma > l.LUMA_MAX) return FaceCaptureIssue.TOO_BRIGHT
+        if (exposureClipFraction > l.CLIP_MAX) return FaceCaptureIssue.TOO_BRIGHT
         return null
     }
 }

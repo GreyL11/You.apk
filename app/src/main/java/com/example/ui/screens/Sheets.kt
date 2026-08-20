@@ -9,7 +9,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.domain.MealParseResult
 import com.example.domain.Nutrition
+import com.example.domain.ParsedMeal
+import com.example.domain.Skin
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,11 +52,109 @@ fun HydrationSheet(
 @Composable
 fun MealSheet(
     onDismiss: () -> Unit,
-    onLog: (foodId: String, qty: Double) -> Unit
+    onLog: (foodId: String, qty: Double) -> Unit,
+    /** Hands a sentence to the model. Returns null when there is no key or no answer. */
+    onParse: suspend (String) -> MealParseResult? = { null },
+    onLogAll: (List<ParsedMeal>) -> Unit = {},
 ) {
+    val scope = rememberCoroutineScope()
+    var typed by remember { mutableStateOf("") }
+    var parsing by remember { mutableStateOf(false) }
+    var parsed by remember { mutableStateOf<MealParseResult?>(null) }
+    var parseFailed by remember { mutableStateOf(false) }
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Text("Log a Meal", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
+
+            // Say it in one line instead of hunting the list. The model only ever maps words to ids
+            // that already exist below — it never invents a food and never guesses a calorie — and
+            // nothing is written until you have seen the rows it came back with.
+            OutlinedTextField(
+                value = typed,
+                onValueChange = { typed = it; parsed = null; parseFailed = false },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("What did you have?") },
+                placeholder = { Text("two rotis, dal, a glass of milk") },
+                maxLines = 3,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    scope.launch {
+                        parsing = true
+                        parseFailed = false
+                        val result = onParse(typed)
+                        parsed = result
+                        parseFailed = result == null
+                        parsing = false
+                    }
+                },
+                enabled = typed.isNotBlank() && !parsing,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (parsing) "Reading…" else "Read it") }
+
+            if (parseFailed) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Could not read that — add a Gemini key in Profile, or pick from the list below.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            parsed?.let { result ->
+                Spacer(modifier = Modifier.height(12.dp))
+                if (result.items.isEmpty()) {
+                    Text(
+                        "Nothing in that matched the food list.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text("READ AS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    result.items.forEach { item ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(item.label, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "×${if (item.qty == kotlin.math.floor(item.qty)) item.qty.toInt().toString() else item.qty.toString()}",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    // Unmatched words are shown, never silently dropped: knowing it missed the paratha
+                    // is the difference between an incomplete log and a wrong one.
+                    if (result.unknown.isNotEmpty()) {
+                        Text(
+                            "Not in the list, so not logged: ${result.unknown.joinToString(", ")}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // What THIS entry adds — real kcal/macros off the food table, not a guess. The
+                    // model only ever mapped words to a foodId; this number never came from it.
+                    val m = Nutrition.macros(result.items.map { it.foodId to it.qty })
+                    Text(
+                        "${m.kcal} kcal · ${m.protein}g protein · ${m.carbs}g carbs · ${m.fat}g fat",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = { onLogAll(result.items) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Log these") }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("OR PICK ONE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             LazyColumn(modifier = Modifier.heightIn(max = 480.dp)) {
                 for (cat in Nutrition.FOOD_CATS) {
@@ -94,46 +196,69 @@ fun MealSheet(
     }
 }
 
+/** Backed by [Skin]'s real habit/flag catalogue — the exact same 4 evidence-based habits and 6
+ *  descriptive (never diagnostic) flags the skin-diet association engine reads, so a day logged
+ *  here is data [Skin.advice]/[Skin.associations] can actually use, not a separate 3-checkbox
+ *  counter that nothing analyzes. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SkinSheet(
     onDismiss: () -> Unit,
     onLog: (String) -> Unit
 ) {
-    var spf by remember { mutableStateOf(false) }
-    var cleanser by remember { mutableStateOf(false) }
-    var moisturize by remember { mutableStateOf(false) }
+    var score by remember { mutableStateOf(3) }
+    val checkedFlags = remember { mutableStateMapOf<String, Boolean>() }
+    val checkedHabits = remember { mutableStateMapOf<String, Boolean>() }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("Log Skin Routine", style = MaterialTheme.typography.titleLarge)
+            Text("Log Skin", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text("How's your skin today? (1 = bad day, 5 = good day)", style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (n in Skin.SCALE) {
+                    FilterChip(selected = score == n, onClick = { score = n }, label = { Text("$n") })
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
-            
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = cleanser, onCheckedChange = { cleanser = it })
-                Text("Cleanser / Face Wash")
+            Text("Anything worth noting?", style = MaterialTheme.typography.bodyMedium)
+            for (flag in Skin.FLAGS) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = checkedFlags[flag.id] ?: false,
+                        onCheckedChange = { checkedFlags[flag.id] = it },
+                    )
+                    Text(flag.label)
+                }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = moisturize, onCheckedChange = { moisturize = it })
-                Text("Moisturizer / Serum")
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Today's routine", style = MaterialTheme.typography.bodyMedium)
+            for (habit in Skin.HABITS) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = checkedHabits[habit.id] ?: false,
+                        onCheckedChange = { checkedHabits[habit.id] = it },
+                    )
+                    Text(habit.label)
+                }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = spf, onCheckedChange = { spf = it })
-                Text("Sunscreen (SPF)")
-            }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
             Button(
-                onClick = { 
-                    val data = """{"cleanser":$cleanser,"moisturize":$moisturize,"spf":$spf}"""
-                    onLog(data) 
+                onClick = {
+                    val flags = Skin.FLAGS.filter { checkedFlags[it.id] == true }.map { it.id }
+                    val habits = Skin.HABITS.filter { checkedHabits[it.id] == true }.map { it.id }
+                    onLog(Skin.toJson(score, flags, habits))
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Save Routine")
+                Text("Save")
             }
             Spacer(modifier = Modifier.height(24.dp))
         }
@@ -247,25 +372,231 @@ fun WorkoutSheet(
     }
 }
 
+/**
+ * Two clock times, not a rough length.
+ *
+ * "~6 / ~7.5 / ~9 hours" buttons are quicker to tap and they cost the app everything downstream: a
+ * length carries no wake time, and without wake times there is no wake pattern, no regularity and no
+ * bedtime the app can name (see `TInputs.wakePattern`). So this asks when you fell asleep and when
+ * you got up, and nothing is saved until both are real.
+ *
+ * ponytail: the platform's own TimePickerDialog rather than a Compose picker — it is one call, it is
+ * already localised, and it already handles 24-hour settings.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SleepSheet(
     onDismiss: () -> Unit,
-    onLog: (Double) -> Unit
+    onLog: (bed: String, wake: String) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var bed by remember { mutableStateOf<String?>(null) }
+    var wake by remember { mutableStateOf<String?>(null) }
+
+    fun pick(initialHour: Int, onPicked: (String) -> Unit) {
+        android.app.TimePickerDialog(
+            context,
+            { _, h, m -> onPicked("%02d:%02d".format(h, m)) },
+            initialHour, 0, true
+        ).show()
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Log Recovery / Sleep", style = MaterialTheme.typography.titleLarge)
-            
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(onClick = { onLog(6.0) }) { Text("~6 Hours") }
-                Button(onClick = { onLog(7.5) }) { Text("~7.5 Hours") }
-                Button(onClick = { onLog(9.0) }) { Text("~9 Hours") }
+            Text("Log sleep", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "The times, not a guess at the length — the wake time is what lets the app work out a bedtime worth naming.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            OutlinedButton(
+                onClick = { pick(23) { bed = it } },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(bed?.let { "Fell asleep at $it" } ?: "Fell asleep at…") }
+
+            OutlinedButton(
+                onClick = { pick(7) { wake = it } },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(wake?.let { "Woke at $it" } ?: "Woke at…") }
+
+            Button(
+                onClick = { onLog(bed!!, wake!!) },
+                enabled = bed != null && wake != null && bed != wake,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Save") }
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * Type in a value from a real blood test.
+ *
+ * The one place a hormone number may enter this app, and it enters because a person read it off their
+ * own results. The unit is stored as printed rather than converted: ng/dL and nmol/L differ by a
+ * factor of ~28.8, and a silent conversion is how a value ends up meaning something else entirely.
+ *
+ * ponytail: the platform DatePickerDialog, not a Compose one — a draw date is the kind of thing the
+ * OS picker already does correctly, including locale and the "no future dates" case below.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LabSheet(
+    onDismiss: () -> Unit,
+    onLog: (marker: String, value: Double, unit: String, at: String) -> Unit,
+) {
+    // Marker to the unit its report is usually printed in. Editable, because labs differ.
+    val markers = listOf(
+        "totalTestosterone" to ("Total testosterone" to "ng/dL"),
+        "freeTestosterone" to ("Free testosterone" to "pg/mL"),
+        "shbg" to ("SHBG" to "nmol/L"),
+        "vitaminD" to ("Vitamin D (25-OH)" to "ng/mL"),
+    )
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var markerId by remember { mutableStateOf(markers.first().first) }
+    var expanded by remember { mutableStateOf(false) }
+    var value by remember { mutableStateOf("") }
+    var unit by remember { mutableStateOf(markers.first().second.second) }
+    var date by remember { mutableStateOf(java.time.LocalDate.now().toString()) }
+
+    val label = markers.first { it.first == markerId }.second.first
+    val parsed = value.trim().toDoubleOrNull()
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Add a lab result", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Measured values only, as printed on your report. The app will show them beside your logged lifestyle inputs and will never estimate one for you.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Box {
+                OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(label)
+                }
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    markers.forEach { (id, pair) ->
+                        DropdownMenuItem(
+                            text = { Text(pair.first) },
+                            onClick = {
+                                markerId = id
+                                unit = pair.second
+                                expanded = false
+                            },
+                        )
+                    }
+                }
             }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    label = { Text("Value") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = unit,
+                    onValueChange = { unit = it },
+                    label = { Text("Unit") },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            OutlinedButton(
+                onClick = {
+                    val today = java.time.LocalDate.now()
+                    val shown = java.time.LocalDate.parse(date)
+                    android.app.DatePickerDialog(
+                        context,
+                        { _, y, m, d -> date = java.time.LocalDate.of(y, m + 1, d).toString() },
+                        shown.year, shown.monthValue - 1, shown.dayOfMonth,
+                    ).apply {
+                        // A draw cannot have happened tomorrow.
+                        datePicker.maxDate = System.currentTimeMillis()
+                        show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Drawn on $date") }
+
+            Button(
+                onClick = { onLog(markerId, parsed!!, unit.trim(), date) },
+                enabled = parsed != null && parsed > 0.0 && unit.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Save result") }
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * A weigh-in.
+ *
+ * The scale is the only real feedback loop on a calorie target — the target itself is a population
+ * average applied to one person, and [com.example.domain.Nutrition.suggestion] can only correct it
+ * from measurements. Before this sheet existed the only way weight got into the app at all was a
+ * Health Connect import, so anyone without a smart scale could never close that loop.
+ *
+ * Pre-filled with your last weigh-in, because the useful edit is almost always a small one from
+ * there, and typing a fresh three-digit number every morning is how a habit dies.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WeightSheet(
+    lastKg: Double?,
+    onDismiss: () -> Unit,
+    onLog: (Double) -> Unit,
+) {
+    var input by remember {
+        mutableStateOf(lastKg?.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() } ?: "")
+    }
+    val kg = input.replace(',', '.').toDoubleOrNull()
+    // Same bounds the onboarding bodyweight field uses: outside these it is a typo, and a typo here
+    // corrupts the trend that every calorie correction is computed from.
+    val valid = kg != null && kg >= 30.0 && kg <= 250.0
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Log your weight", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Same conditions each time is what makes the trend readable — first thing, before eating or drinking. One reading means nothing; three weeks of them is the only honest check on your calorie target.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it.filter { c -> c.isDigit() || c == '.' || c == ',' } },
+                label = { Text("Weight") },
+                suffix = { Text("kg") },
+                singleLine = true,
+                isError = input.isNotEmpty() && !valid,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = { onLog(kg!!) },
+                enabled = valid,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Save") }
             Spacer(modifier = Modifier.height(24.dp))
         }
     }

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -25,7 +27,6 @@ import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.TodayScreen
 import com.example.ui.screens.TalkScreen
-import com.example.ui.screens.FaceScreen
 import com.example.ui.screens.FaceScanScreen
 import com.example.ui.screens.FaceScanResultScreen
 import com.example.ui.screens.FaceHistoryScreen
@@ -40,6 +41,21 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         
+        // The manifest declares POST_NOTIFICATIONS, which on Android 13+ grants nothing on its own:
+        // without this ask, NotificationController.hasPermission() is false forever and the coach's
+        // hourly worker runs, decides what to say, and silently sends none of it. Asked here rather
+        // than behind a settings toggle because the worker is already scheduled below — the two have
+        // to arrive together or the feature only looks like it exists.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            androidx.core.app.ActivityCompat.requestPermissions(
+                this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1,
+            )
+        }
+
         val workRequest = PeriodicWorkRequestBuilder<com.example.domain.NotificationWorker>(1, TimeUnit.HOURS).build()
         WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork("coach_notification", androidx.work.ExistingPeriodicWorkPolicy.KEEP, workRequest)
         
@@ -69,6 +85,13 @@ fun MainAppRouter() {
 @Composable
 fun MainScreen(startDestination: String = "home") {
     val navController = rememberNavController()
+
+    // Which action a notification tap arrived for. Read once and the extra is removed immediately, so
+    // a recomposition, a rotate or a return from another screen does not reopen the sheet behind you.
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    val tappedActionId = remember {
+        activity?.intent?.getStringExtra("actionId").also { activity?.intent?.removeExtra("actionId") }
+    }
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable("onboarding") {
@@ -119,7 +142,7 @@ fun MainScreen(startDestination: String = "home") {
                             onClick = { navController.navigate("chat") },
                             containerColor = MaterialTheme.colorScheme.primary
                         ) {
-                            Icon(androidx.compose.material.icons.Icons.Filled.Chat, contentDescription = "Ask AI Coach")
+                            Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.Chat, contentDescription = "Ask AI Coach")
                         }
                     }
                 }
@@ -128,10 +151,15 @@ fun MainScreen(startDestination: String = "home") {
                     if (selectedTab == "today") {
                         TodayScreen(
                             onNavigateToWeeklyReview = { navController.navigate("weeklyReview") },
-                            onNavigateToLiveSession = { exId -> navController.navigate("liveSession/$exId") }
+                            onNavigateToLiveSession = { exId -> navController.navigate("liveSession/$exId") },
+                            openActionId = tappedActionId
                         )
                     } else {
-                        DashboardScreen(onNavigateToFaceScan = { navController.navigate("faceScan") })
+                        DashboardScreen(
+                            onNavigateToFaceScan = { navController.navigate("faceScan") },
+                            onNavigateToSkinInsights = { navController.navigate("skinInsights") },
+                            onNavigateToHormonal = { navController.navigate("hormonal") },
+                        )
                     }
                 }
             }
@@ -155,7 +183,7 @@ fun MainScreen(startDestination: String = "home") {
                         title = { Text("Ask Coach") },
                         navigationIcon = {
                             IconButton(onClick = { navController.popBackStack() }) {
-                                Icon(androidx.compose.material.icons.Icons.Filled.ArrowBack, contentDescription = "Back")
+                                Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                             }
                         }
                     )
@@ -173,6 +201,14 @@ fun MainScreen(startDestination: String = "home") {
         
         composable("weeklyReview") {
             WeeklyReviewScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable("skinInsights") {
+            com.example.ui.screens.SkinScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable("hormonal") {
+            com.example.ui.screens.HormonalScreen(onBack = { navController.popBackStack() })
         }
 
         composable("faceScan") {
