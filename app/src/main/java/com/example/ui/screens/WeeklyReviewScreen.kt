@@ -104,9 +104,30 @@ class WeeklyReviewViewModel(application: Application) : AndroidViewModel(applica
             }
             if (weaknesses.isNotEmpty()) {
                 attention = weaknesses.joinToString(", ") + " lacked logging or completion."
-                focus = "Improve your consistency with ${weaknesses.first()}."
             }
-            
+
+            // Real bottleneck read, not the raw weakness list above -- GoalGapEngine already knows
+            // sleep/recovery outrank the rest (most other habits depend on them), and can point at
+            // NEEDS_ATTENTION severity specifically rather than just "fewer than N completions."
+            val allDayRows = db.dayRowDao().getAllSync()
+            val allMeals = db.mealDao().getAllSync()
+            val todayRow = allDayRows.find { it.dayKey == now.toLocalDate().toString() }
+            val profile = db.profileDao().getProfileSync()
+            val healthSnapshot = com.example.domain.HealthStateEngine.evaluate(
+                com.example.domain.HealthStateEngine.Inputs(
+                    now = now, todayRow = todayRow,
+                    recentMeals = allMeals.filter { it.at.take(10) == now.toLocalDate().toString() }, allMeals = allMeals,
+                    recentLogEntries = logs.filter { it.at.take(10) == now.toLocalDate().toString() },
+                    allLogEntries = db.logEntryDao().getAllSync(), allDayRows = allDayRows, profile = profile,
+                ),
+            )
+            val loadReading = com.example.domain.TrainingLoadEngine.evaluate(db.logEntryDao().getAllSync(), nowDayKey = now.toLocalDate().toString())
+            val recoveryReading = com.example.domain.RecoveryEngine.evaluate(healthSnapshot.sleep, loadReading.state)
+            val bottleneck = com.example.domain.GoalGapEngine.evaluate(healthSnapshot, recoveryReading).bottleneck
+            if (bottleneck != null) {
+                focus = "Focus on ${weeklyFocusLabel(bottleneck)} next week — it's currently your biggest limiter."
+            }
+
             _state.value = ReviewState(
                 training = trainingStatus,
                 hydration = hydrationStatus,
@@ -119,6 +140,15 @@ class WeeklyReviewViewModel(application: Application) : AndroidViewModel(applica
             )
         }
     }
+}
+
+private fun weeklyFocusLabel(dimension: com.example.domain.GoalGapEngine.Dimension): String = when (dimension) {
+    com.example.domain.GoalGapEngine.Dimension.TRAINING_CONSISTENCY -> "training consistency"
+    com.example.domain.GoalGapEngine.Dimension.NUTRITION_CONSISTENCY -> "logging your meals"
+    com.example.domain.GoalGapEngine.Dimension.SLEEP_CONSISTENCY -> "sleep"
+    com.example.domain.GoalGapEngine.Dimension.RECOVERY -> "recovery"
+    com.example.domain.GoalGapEngine.Dimension.HYDRATION -> "hydration"
+    com.example.domain.GoalGapEngine.Dimension.SKIN_ROUTINE -> "your skin routine"
 }
 
 @Composable
