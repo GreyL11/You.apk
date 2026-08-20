@@ -40,6 +40,7 @@ data class TodayDashboardState(
     val waterIntake: Int = 0,
     /** "35% below your normal" — null unless PersonalBaseline has enough evidence to say it. */
     val hydrationVsBaseline: String? = null,
+    val trainingIntensity: com.example.domain.TrainingIntensityDecision.Reading? = null,
     val hasCompletedTraining: Boolean = false
 )
 
@@ -131,6 +132,21 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 if (history.isNotEmpty()) history.last().load else null
             }
             
+            // Should today be a full session, reduced, or a recovery day? Built entirely from the
+            // same real sleep/load reads HealthStateEngine/RecoveryEngine/TrainingLoadEngine
+            // already compute for the Dashboard -- see TrainingIntensityDecision's own doc comment
+            // for why this stays narrow rather than becoming a general consequence-simulation engine.
+            val allDayRows = db.dayRowDao().getAllSync()
+            val sleepState = com.example.domain.HealthStateEngine.evaluate(
+                com.example.domain.HealthStateEngine.Inputs(
+                    now = now, todayRow = todayRow, recentMeals = recentMeals, allMeals = allMeals,
+                    recentLogEntries = recentLogs, allLogEntries = allLogs, allDayRows = allDayRows, profile = profile,
+                ),
+            ).sleep
+            val loadReading = com.example.domain.TrainingLoadEngine.evaluate(allLogs, nowDayKey = dayKey)
+            val recoveryReading = com.example.domain.RecoveryEngine.evaluate(sleepState, loadReading.state)
+            val trainingIntensity = com.example.domain.TrainingIntensityDecision.decide(recoveryReading, loadReading.state)
+
             val foodEntries = recentMeals.map { m -> m to Nutrition.FOODS.find { it.id == m.foodId }?.ml }
             val waterIntake = Nutrition.fluid(foodEntries)
 
@@ -158,6 +174,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 waterTarget = Nutrition.waterTarget(profile),
                 waterIntake = waterIntake,
                 hydrationVsBaseline = hydrationVsBaseline,
+                trainingIntensity = trainingIntensity,
                 hasCompletedTraining = recentOutcomes.any { it.actionId == "train_today" && it.event == HealthCoachEngine.ActionState.COMPLETED.name && it.at.startsWith(dayKey) }
             )
         }

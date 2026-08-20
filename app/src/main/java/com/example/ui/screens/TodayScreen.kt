@@ -182,6 +182,32 @@ fun TodayScreen(
         ) {
             // 2. TODAY'S TRAINING
             DashboardSectionTitle("Training")
+            // Only shown when it's saying something worth interrupting for -- a real full-session,
+            // high-confidence day says nothing here rather than a banner every single day.
+            state.trainingIntensity?.let { intensity ->
+                if (intensity.decision != com.example.domain.TrainingIntensityDecision.Decision.FULL_SESSION) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                when (intensity.decision) {
+                                    com.example.domain.TrainingIntensityDecision.Decision.RECOVERY_DAY -> "Recovery day recommended"
+                                    com.example.domain.TrainingIntensityDecision.Decision.REDUCED_SESSION -> "Reduced session recommended"
+                                    else -> "Not enough data for a training call yet"
+                                },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(intensity.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
             val hasTraining = state.todayTraining != null && state.todayTraining!!.exercises.isNotEmpty()
             if (hasTraining) {
                 val trainingTitle = state.todayTraining!!.name
