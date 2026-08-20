@@ -40,6 +40,7 @@ data class TodayDashboardState(
     val waterIntake: Int = 0,
     /** "35% below your normal" — null unless PersonalBaseline has enough evidence to say it. */
     val hydrationVsBaseline: String? = null,
+    val sleepVsBaseline: String? = null,
     val trainingIntensity: com.example.domain.TrainingIntensityDecision.Reading? = null,
     val hasCompletedTraining: Boolean = false
 )
@@ -155,6 +156,11 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             val hydrationBaseline = com.example.domain.PersonalBaseline.dailyFluidMl(allMeals.filter { it.at.take(10) != dayKey })
             val hydrationVsBaseline = com.example.domain.PersonalBaseline.compare(waterIntake.toDouble(), hydrationBaseline)
 
+            // Same real comparison, for last night's sleep against this person's own typical.
+            val sleepBaseline = com.example.domain.PersonalBaseline.sleepHours(allDayRows.filter { it.dayKey != dayKey })
+            val lastNightHours = todayRow?.let { com.example.domain.MoodInsights.sleepSummary(it).main }
+            val sleepVsBaseline = com.example.domain.PersonalBaseline.compare(lastNightHours, sleepBaseline)
+
             _dashboardState.value = TodayDashboardState(
                 nextBestAction = nba,
                 profile = profile,
@@ -174,6 +180,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 waterTarget = Nutrition.waterTarget(profile),
                 waterIntake = waterIntake,
                 hydrationVsBaseline = hydrationVsBaseline,
+                sleepVsBaseline = sleepVsBaseline,
                 trainingIntensity = trainingIntensity,
                 hasCompletedTraining = recentOutcomes.any { it.actionId == "train_today" && it.event == HealthCoachEngine.ActionState.COMPLETED.name && it.at.startsWith(dayKey) }
             )

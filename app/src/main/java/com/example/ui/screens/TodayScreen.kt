@@ -454,7 +454,9 @@ fun TodayScreen(
 
             // 7. SLEEP / RECOVERY
             DashboardSectionTitle("Sleep")
-            val sleepsDesc = if (state.todayRow?.sleeps != null) "Sleep logged." else "No sleep data."
+            val sleepsDesc = if (state.todayRow?.sleeps != null) {
+                "Sleep logged." + (state.sleepVsBaseline?.let { " $it" } ?: "")
+            } else "No sleep data."
             DashboardCard(
                 icon = Icons.Filled.Nightlight,
                 title = "Rest & Recovery",
