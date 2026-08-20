@@ -125,7 +125,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             )
             val loadReading = com.example.domain.TrainingLoadEngine.evaluate(allLogs, nowDayKey = dayKey)
             val recoveryReading = com.example.domain.RecoveryEngine.evaluate(healthSnapshot.sleep, loadReading.state)
-            val trainingIntensity = com.example.domain.TrainingIntensityDecision.decide(recoveryReading, loadReading.state)
+            val trainingIntensity = com.example.domain.TrainingIntensityDecision.decide(recoveryReading, loadReading)
             val bottleneck = com.example.domain.GoalGapEngine.evaluate(healthSnapshot, recoveryReading).bottleneck
             val pushPull = com.example.domain.TrainingCoverageEngine.pushPullBalance(allLogs)
 

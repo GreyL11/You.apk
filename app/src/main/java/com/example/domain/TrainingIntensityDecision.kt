@@ -1,5 +1,7 @@
 package com.example.domain
 
+import kotlin.math.roundToInt
+
 /**
  * "Should today be a full session, a reduced one, or a recovery day?" — built entirely from
  * [RecoveryEngine] and [TrainingLoadEngine]'s already-computed real reads.
@@ -16,9 +18,16 @@ object TrainingIntensityDecision {
 
     data class Reading(val decision: Decision, val reason: String, val confidence: Confidence)
 
-    fun decide(recovery: RecoveryEngine.Reading, load: TrainingLoadEngine.State): Reading {
+    /** The real numbers behind a HIGH_LOAD read, so the reason names what actually happened
+     *  instead of just a qualifier -- empty when [TrainingLoadEngine] itself had none to give. */
+    private fun loadDetail(load: TrainingLoadEngine.Reading): String {
+        val typical = load.typicalWeeklySets ?: return ""
+        return " (${load.recentSets} sets this week vs your typical ${typical.roundToInt()}/week)"
+    }
+
+    fun decide(recovery: RecoveryEngine.Reading, load: TrainingLoadEngine.Reading): Reading {
         val recoveryKnown = recovery.state != RecoveryEngine.State.INSUFFICIENT_DATA
-        val loadKnown = load != TrainingLoadEngine.State.INSUFFICIENT_DATA
+        val loadKnown = load.state != TrainingLoadEngine.State.INSUFFICIENT_DATA
 
         if (!recoveryKnown && !loadKnown) {
             return Reading(
@@ -31,16 +40,16 @@ object TrainingIntensityDecision {
             recovery.state == RecoveryEngine.State.RECOVERY_NEEDED ->
                 Reading(Decision.RECOVERY_DAY, "Recovery needs attention: ${recovery.reasons.joinToString(" and ")}.", Confidence.HIGH)
 
-            recovery.state == RecoveryEngine.State.MODERATE && load == TrainingLoadEngine.State.HIGH_LOAD ->
-                Reading(Decision.REDUCED_SESSION, "Recent training load is above your normal, and recovery is only moderate right now.", Confidence.MODERATE)
+            recovery.state == RecoveryEngine.State.MODERATE && load.state == TrainingLoadEngine.State.HIGH_LOAD ->
+                Reading(Decision.REDUCED_SESSION, "Recent training load is above your normal, and recovery is only moderate right now.${loadDetail(load)}", Confidence.MODERATE)
 
-            load == TrainingLoadEngine.State.HIGH_LOAD ->
-                Reading(Decision.REDUCED_SESSION, "Recent training load is well above your normal.", Confidence.MODERATE)
+            load.state == TrainingLoadEngine.State.HIGH_LOAD ->
+                Reading(Decision.REDUCED_SESSION, "Recent training load is well above your normal.${loadDetail(load)}", Confidence.MODERATE)
 
             recovery.state == RecoveryEngine.State.MODERATE ->
                 Reading(Decision.REDUCED_SESSION, "Recovery is currently only moderate — a lighter session keeps progress going without adding to it.", Confidence.MODERATE)
 
-            recoveryKnown && loadKnown && recovery.state == RecoveryEngine.State.READY && load != TrainingLoadEngine.State.UNDERLOADED ->
+            recoveryKnown && loadKnown && recovery.state == RecoveryEngine.State.READY && load.state != TrainingLoadEngine.State.UNDERLOADED ->
                 Reading(Decision.FULL_SESSION, "Sleep and recent training load both look normal.", Confidence.HIGH)
 
             else ->
