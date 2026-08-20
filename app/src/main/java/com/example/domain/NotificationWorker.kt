@@ -26,18 +26,11 @@ class NotificationWorker(
         val totalHistorical = allMeals.size + allLogs.size + allDayRows.size + recentOutcomes.size
         val profile = db.profileDao().getProfileSync()
 
-        // Same real bottleneck read TodayViewModel uses -- the notification the user actually
-        // receives should point at today's real biggest limiter, not just a fixed domain order.
-        val healthSnapshot = HealthStateEngine.evaluate(
-            HealthStateEngine.Inputs(
-                now = now, todayRow = todayRow, recentMeals = recentMeals, allMeals = allMeals,
-                recentLogEntries = recentLogEntries, allLogEntries = allLogs, allDayRows = allDayRows, profile = profile,
-            ),
+        // The SAME assembler TodayViewModel uses. Rebuilding the engine chain here by hand is how
+        // the notification and the in-app answer would silently diverge on any future edit.
+        val state = PersonalStateBuilder.build(
+            now = now, profile = profile, allLogs = allLogs, allDayRows = allDayRows, allMeals = allMeals,
         )
-        val loadReading = TrainingLoadEngine.evaluate(allLogs, nowDayKey = dayKey)
-        val recoveryReading = RecoveryEngine.evaluate(healthSnapshot.sleep, loadReading.state)
-        val bottleneck = GoalGapEngine.evaluate(healthSnapshot, recoveryReading).bottleneck
-        val pushPull = TrainingCoverageEngine.pushPullBalance(allLogs)
 
         val ctx = HealthCoachEngine.Context(
             now = now,
@@ -47,8 +40,8 @@ class NotificationWorker(
             recentOutcomes = recentOutcomes,
             totalHistoricalLogs = totalHistorical,
             profile = profile,
-            bottleneck = bottleneck?.let { HealthCoachEngine.coachDomainFor(it) },
-            pushPullBalance = pushPull.balance,
+            bottleneck = state.bottleneck?.let { HealthCoachEngine.coachDomainFor(it) },
+            pushPullBalance = state.pushPull.balance,
         )
 
         val nba = HealthCoachEngine.selectNextBestAction(ctx) ?: return Result.success()

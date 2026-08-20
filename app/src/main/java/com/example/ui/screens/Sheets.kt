@@ -3,6 +3,8 @@ package com.example.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -265,6 +267,128 @@ fun SkinSheet(
     }
 }
 
+/** The daily check-in the whole closed loop depends on: energy, soreness, stress and whether you
+ *  woke rested. Every field is skippable, and a skipped field stays null rather than becoming a
+ *  neutral score -- [com.example.domain.ReadinessEngine] treats absent and average differently. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CheckInSheet(
+    onDismiss: () -> Unit,
+    onLog: (energy: Int?, soreness: Int?, stress: Int?, refreshed: Boolean?) -> Unit,
+) {
+    var energy by remember { mutableStateOf<Int?>(null) }
+    var soreness by remember { mutableStateOf<Int?>(null) }
+    var stress by remember { mutableStateOf<Int?>(null) }
+    var refreshed by remember { mutableStateOf<Boolean?>(null) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Daily check-in", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Skip anything you'd rather not answer — a blank stays blank rather than becoming an average.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            ScaleRow("Energy", "1 = drained, 10 = great", energy) { energy = it }
+            ScaleRow("Soreness", "1 = none, 10 = severe", soreness) { soreness = it }
+            ScaleRow("Stress", "1 = calm, 10 = very high", stress) { stress = it }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Did you wake up feeling rested?", style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = refreshed == true, onClick = { refreshed = true }, label = { Text("Yes") })
+                FilterChip(selected = refreshed == false, onClick = { refreshed = false }, label = { Text("No") })
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = { onLog(energy, soreness, stress, refreshed) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Save") }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ScaleRow(label: String, hint: String, value: Int?, onSelect: (Int) -> Unit) {
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(label, style = MaterialTheme.typography.bodyMedium)
+    Text(hint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (n in 1..10) {
+            FilterChip(selected = value == n, onClick = { onSelect(n) }, label = { Text("$n") })
+        }
+    }
+}
+
+/** Logging a cardio session that actually happened. Modes come from [com.example.domain.Cardio]
+ *  so a logged session is directly comparable with what the decision engine prescribed. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CardioSheet(
+    suggested: com.example.domain.Cardio.Mode,
+    suggestedMinutes: Int?,
+    onDismiss: () -> Unit,
+    onLog: (com.example.domain.Cardio.Session) -> Unit,
+) {
+    val initial = if (suggested == com.example.domain.Cardio.Mode.NONE) com.example.domain.Cardio.Mode.EASY_WALK else suggested
+    var mode by remember { mutableStateOf(initial) }
+    var minutes by remember { mutableStateOf((suggestedMinutes ?: 20).toString()) }
+    var effort by remember { mutableStateOf<Int?>(null) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Log cardio", style = MaterialTheme.typography.titleLarge)
+
+            Text("What did you do?", style = MaterialTheme.typography.bodyMedium)
+            com.example.domain.Cardio.Mode.entries
+                .filter { it != com.example.domain.Cardio.Mode.NONE }
+                .forEach { m ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = mode == m, onClick = { mode = m })
+                        Text(com.example.domain.Cardio.label(m), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+
+            OutlinedTextField(
+                value = minutes,
+                onValueChange = { minutes = it.filter { c -> c.isDigit() }.take(3) },
+                label = { Text("Minutes") },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("How did it feel?", style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(1 to "Easy", 2 to "Right", 3 to "Hard").forEach { (v, l) ->
+                    FilterChip(selected = effort == v, onClick = { effort = v }, label = { Text(l) })
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            val mins = minutes.toIntOrNull() ?: 0
+            Button(
+                onClick = { onLog(com.example.domain.Cardio.Session(mode, mins, effort)) },
+                enabled = mins > 0,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Save") }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
 /** A single 1-10 mood self-report, feeding [com.example.domain.WellbeingEngine] -- the one
  *  self-report dimension the schema already has ([DayRow.mood]). Never asks why, never labels
  *  the number, just records it. */
@@ -333,13 +457,14 @@ private fun ExercisePicker(selected: String, onSelect: (String) -> Unit) {
 fun WorkoutSheet(
     onDismiss: () -> Unit,
     onStartLiveSession: (exId: String) -> Unit,
-    onManualLog: (exId: String, reps: Int, load: Double) -> Unit
+    onManualLog: (exId: String, reps: Int, load: Double, difficulty: Int?) -> Unit
 ) {
     var isManualMode by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     var repsStr by remember { mutableStateOf("") }
     var loadStr by remember { mutableStateOf("") }
     var selectedEx by remember { mutableStateOf("squat") }
+    var difficulty by remember { mutableStateOf<Int?>(null) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -370,13 +495,22 @@ fun WorkoutSheet(
                     modifier = Modifier.fillMaxWidth()
                 )
                 
+                // Real difficulty feedback, optional on purpose: this is what gates progression, so
+                // an unanswered prompt must stay unanswered rather than defaulting to "moderate".
+                Text("How did that feel? (optional)", style = MaterialTheme.typography.bodyMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(1 to "Easy", 2 to "Right", 3 to "Hard").forEach { (v, l) ->
+                        FilterChip(selected = difficulty == v, onClick = { difficulty = v }, label = { Text(l) })
+                    }
+                }
+
                 Button(
                     onClick = {
                         val reps = repsStr.toIntOrNull() ?: 0
                         val load = loadStr.toDoubleOrNull() ?: 0.0
                         if (reps > 0 && !isSaving) {
                             isSaving = true
-                            onManualLog(selectedEx, reps, load)
+                            onManualLog(selectedEx, reps, load, difficulty)
                         }
                     },
                     modifier = Modifier.fillMaxWidth()

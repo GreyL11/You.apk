@@ -28,7 +28,11 @@ data class LogEntry(
     val sets: Int?,
     val load: Double,
     val faultEvents: String, // JSON List<FaultEvent>
-    val correctedFrom: Int?
+    val correctedFrom: Int?,
+    /** Real user-reported difficulty for this set, 1 (easy) .. 3 (hard) -- null means not asked/
+     *  answered, never a guessed "moderate". The only input ReadinessEngine/progression logic has
+     *  for "was this too hard" beyond what a rep-completion count alone can say. */
+    val difficulty: Int? = null,
 )
 
 @Entity(tableName = "verdict")
@@ -85,14 +89,24 @@ data class DayRow(
     val bed: String?,
     val wake: String?,
     val sleeps: String?, // JSON List<SleepBlock>
-    val plans: String?, // JSON List<Plan>
+    val plans: String?, // JSON Cardio.Session list for the day -- see Cardio.kt toJson/fromJson
     val skin: String?, // JSON SkinData
     /**
      * Steps for the day, imported from Health Connect. Null means not imported, which is NOT zero
      * steps — the whole app treats absent and zero as different things, and a day the phone was left
      * on a desk is not a day nobody walked.
      */
-    val steps: Int? = null
+    val steps: Int? = null,
+    /**
+     * Real self-reports from the daily check-in, 1..10 (soreness 1 = none, 10 = severe). Null means
+     * not answered — never a neutral default, since "didn't answer" and "felt average" would drive
+     * different readiness reads and only one of them is a fact.
+     */
+    val energy: Int? = null,
+    val soreness: Int? = null,
+    val stress: Int? = null,
+    /** Did you wake up feeling rested? Null means not asked. */
+    val refreshed: Boolean? = null,
 )
 
 @Entity(tableName = "check_entity") // PHQ-9/GAD-7

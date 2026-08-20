@@ -43,7 +43,11 @@ data class TodayDashboardState(
     val sleepVsBaseline: String? = null,
     val trainingIntensity: com.example.domain.TrainingIntensityDecision.Reading? = null,
     val hasCompletedTraining: Boolean = false,
-    val wellbeing: com.example.domain.WellbeingEngine.Reading = com.example.domain.WellbeingEngine.Reading(com.example.domain.WellbeingEngine.Pattern.INSUFFICIENT_DATA, null)
+    val wellbeing: com.example.domain.WellbeingEngine.Reading = com.example.domain.WellbeingEngine.Reading(com.example.domain.WellbeingEngine.Pattern.INSUFFICIENT_DATA, null),
+    /** Today's whole closed-loop read — readiness, the training and cardio decisions, and the real
+     *  factors behind each. Null only before the first refresh completes. */
+    val personalState: com.example.domain.PersonalState? = null,
+    val nextAction: com.example.domain.NextActionEngine.Answer? = null,
 )
 
 class TodayViewModel(application: Application) : AndroidViewModel(application) {
@@ -112,22 +116,15 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             )
             val nutritionCoachLine = Nutrition.coachLine(profile, phase, loggedKcal, trend)
 
-            // Computed before the coach context so its real bottleneck (not a fixed static order)
-            // can break ties among today's candidates -- see HealthCoachEngine.selectNextBestAction.
-            // Built entirely from the same real sleep/load reads HealthStateEngine/RecoveryEngine/
-            // TrainingLoadEngine already compute for the Dashboard.
+            // One assembler, so the in-app answer and the notification answer can never drift apart
+            // -- both call PersonalStateBuilder rather than rebuilding the engine chain by hand.
             val allDayRows = db.dayRowDao().getAllSync()
-            val healthSnapshot = com.example.domain.HealthStateEngine.evaluate(
-                com.example.domain.HealthStateEngine.Inputs(
-                    now = now, todayRow = todayRow, recentMeals = recentMeals, allMeals = allMeals,
-                    recentLogEntries = recentLogs, allLogEntries = allLogs, allDayRows = allDayRows, profile = profile,
-                ),
+            val personalState = com.example.domain.PersonalStateBuilder.build(
+                now = now, profile = profile, allLogs = allLogs, allDayRows = allDayRows, allMeals = allMeals,
             )
-            val loadReading = com.example.domain.TrainingLoadEngine.evaluate(allLogs, nowDayKey = dayKey)
-            val recoveryReading = com.example.domain.RecoveryEngine.evaluate(healthSnapshot.sleep, loadReading.state)
-            val trainingIntensity = com.example.domain.TrainingIntensityDecision.decide(recoveryReading, loadReading)
-            val bottleneck = com.example.domain.GoalGapEngine.evaluate(healthSnapshot, recoveryReading).bottleneck
-            val pushPull = com.example.domain.TrainingCoverageEngine.pushPullBalance(allLogs)
+            val trainingIntensity = com.example.domain.TrainingIntensityDecision.decide(personalState.recovery, personalState.load)
+            val bottleneck = personalState.bottleneck
+            val pushPull = personalState.pushPull
 
             val ctx = HealthCoachEngine.Context(
                 now = now,
@@ -167,9 +164,12 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
             val lastNightHours = todayRow?.let { com.example.domain.MoodInsights.sleepSummary(it).main }
             val sleepVsBaseline = com.example.domain.PersonalBaseline.compare(lastNightHours, sleepBaseline)
 
-            // Oldest-first real logged moods only -- a day nobody rated is absent, never a skipped-low.
-            val wellbeing = com.example.domain.WellbeingEngine.evaluate(
-                allDayRows.sortedBy { it.dayKey }.mapNotNull { it.mood },
+            val ateToday = recentMeals.any { m -> Nutrition.FOODS.find { it.id == m.foodId }?.ml == null }
+            val nextAction = com.example.domain.NextActionEngine.answer(
+                state = personalState,
+                hour = now.hour,
+                moodLoggedToday = todayRow?.energy != null || todayRow?.mood != null,
+                ateToday = ateToday,
             )
 
             _dashboardState.value = TodayDashboardState(
@@ -194,8 +194,50 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 sleepVsBaseline = sleepVsBaseline,
                 trainingIntensity = trainingIntensity,
                 hasCompletedTraining = recentOutcomes.any { it.actionId == "train_today" && it.event == HealthCoachEngine.ActionState.COMPLETED.name && it.at.startsWith(dayKey) },
-                wellbeing = wellbeing,
+                wellbeing = personalState.wellbeing,
+                personalState = personalState,
+                nextAction = nextAction,
             )
+        }
+    }
+
+    /** The daily check-in. A null argument means "not answered" and is written through as null,
+     *  never coerced to a neutral score — [com.example.domain.ReadinessEngine] distinguishes them. */
+    fun logCheckIn(energy: Int?, soreness: Int?, stress: Int?, refreshed: Boolean?) {
+        viewModelScope.launch {
+            val dayKey = LocalDateTime.now().toLocalDate().toString()
+            val existing = db.dayRowDao().getSync(dayKey)
+            db.dayRowDao().insert(
+                (existing ?: DayRow(dayKey, null, null, null, null, null, null)).copy(
+                    energy = energy ?: existing?.energy,
+                    soreness = soreness ?: existing?.soreness,
+                    stress = stress ?: existing?.stress,
+                    refreshed = refreshed ?: existing?.refreshed,
+                ),
+            )
+            refresh()
+        }
+    }
+
+    fun logCardio(session: com.example.domain.Cardio.Session) {
+        viewModelScope.launch {
+            val dayKey = LocalDateTime.now().toLocalDate().toString()
+            val existing = db.dayRowDao().getSync(dayKey)
+            val already = com.example.domain.Cardio.fromJson(existing?.plans)
+            db.dayRowDao().insert(
+                (existing ?: DayRow(dayKey, null, null, null, null, null, null)).copy(
+                    plans = com.example.domain.Cardio.toJson(already + session),
+                ),
+            )
+            db.actionOutcomeDao().insert(
+                ActionOutcome(
+                    at = LocalDateTime.now().toString(),
+                    actionId = "cardio_today",
+                    domain = "cardio",
+                    event = HealthCoachEngine.ActionState.COMPLETED.name,
+                ),
+            )
+            refresh()
         }
     }
 
@@ -370,6 +412,9 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
         faultCount: Int = 0,
         faultEvents: List<FaultEvent> = emptyList(),
         profile: TrainingProfile = TrainingProfile(),
+        /** 1 (easy) .. 3 (hard) as reported. Null when not asked — the adaptive loop reads this to
+         *  decide whether progression is defensible, so a guessed value would corrupt it. */
+        difficulty: Int? = null,
     ) {
         viewModelScope.launch {
             val now = LocalDateTime.now()
@@ -404,6 +449,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                     // faultEvents shape — never a placeholder "[{}]" standing in for a count.
                     faultEvents = faultEvents.joinToString(",", "[", "]") { "{\"rep\":${it.rep},\"id\":\"${it.faultId}\"}" },
                     correctedFrom = null,
+                    difficulty = difficulty,
                 ),
             )
 

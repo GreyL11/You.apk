@@ -23,7 +23,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FaceCapture::class,
         LabResult::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -68,13 +68,33 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v2 -> v3: the real self-reported signals the closed-loop coach needs and could not
+         * honestly derive from anything already stored — per-set difficulty, and the daily
+         * energy/soreness/stress/refreshed check-in.
+         *
+         * All nullable with no DEFAULT, deliberately: every existing row becomes "not answered"
+         * rather than silently acquiring a neutral score the person never gave. ReadinessEngine
+         * treats absent and average as different things, so a default here would manufacture
+         * evidence for every day already in the database.
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `log_entry` ADD COLUMN `difficulty` INTEGER")
+                db.execSQL("ALTER TABLE `day_row` ADD COLUMN `energy` INTEGER")
+                db.execSQL("ALTER TABLE `day_row` ADD COLUMN `soreness` INTEGER")
+                db.execSQL("ALTER TABLE `day_row` ADD COLUMN `stress` INTEGER")
+                db.execSQL("ALTER TABLE `day_row` ADD COLUMN `refreshed` INTEGER")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "gym_trainer_database"
-                ).addMigrations(MIGRATION_1_2).build()
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
                 INSTANCE = instance
                 instance
             }

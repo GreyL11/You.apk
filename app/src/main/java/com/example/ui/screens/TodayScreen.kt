@@ -45,6 +45,8 @@ fun TodayScreen(
     var showSleepSheet by remember { mutableStateOf(false) }
     var showWeightSheet by remember { mutableStateOf(false) }
     var showMoodSheet by remember { mutableStateOf(false) }
+    var showCheckInSheet by remember { mutableStateOf(false) }
+    var showCardioSheet by remember { mutableStateOf(false) }
 
     // A notification that asks a question and then drops you on a dashboard has wasted the
     // interruption. The actionId the coach already puts in the notification opens the sheet that
@@ -104,10 +106,10 @@ fun TodayScreen(
                 showWorkoutSheet = false
                 onNavigateToLiveSession(exId)
             },
-            onManualLog = { exId, reps, load ->
+            onManualLog = { exId, reps, load, difficulty ->
                 // Without the real profile, Coach's plate-snapped progression silently used the
                 // default plate set for every user regardless of what they actually own.
-                viewModel.logTraining(exId, reps, load, profile = state.trainingProfile)
+                viewModel.logTraining(exId, reps, load, profile = state.trainingProfile, difficulty = difficulty)
                 showWorkoutSheet = false
             }
         )
@@ -131,6 +133,28 @@ fun TodayScreen(
                 viewModel.logSleep(bed, wake)
                 showSleepSheet = false
             }
+        )
+    }
+
+    if (showCheckInSheet) {
+        CheckInSheet(
+            onDismiss = { showCheckInSheet = false },
+            onLog = { energy, soreness, stress, refreshed ->
+                viewModel.logCheckIn(energy, soreness, stress, refreshed)
+                showCheckInSheet = false
+            },
+        )
+    }
+
+    if (showCardioSheet) {
+        CardioSheet(
+            suggested = state.personalState?.decision?.cardio?.mode ?: com.example.domain.Cardio.Mode.EASY_WALK,
+            suggestedMinutes = state.personalState?.decision?.cardio?.minutes,
+            onDismiss = { showCardioSheet = false },
+            onLog = { session ->
+                viewModel.logCardio(session)
+                showCardioSheet = false
+            },
         )
     }
 
@@ -191,6 +215,16 @@ fun TodayScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // 1b. TODAY'S MISSION — the closed-loop answer to "what should I do today?"
+            state.personalState?.let { ps ->
+                TodaysMissionCard(
+                    state = ps,
+                    nextAction = state.nextAction,
+                    onCheckIn = { showCheckInSheet = true },
+                    onLogCardio = { showCardioSheet = true },
+                )
+            }
+
             // 2. TODAY'S TRAINING
             DashboardSectionTitle("Training")
             // Only shown when it's saying something worth interrupting for -- a real full-session,
@@ -523,6 +557,165 @@ fun TodayScreen(
             }
         }
     }
+}
+
+/**
+ * The one card that answers "what should I do today?" — readiness, the real top priority, the
+ * training and cardio decisions, and an expandable "why" built from the exact factors the decision
+ * engine branched on. No raw internal scores are ever shown without their explanation.
+ */
+@Composable
+private fun TodaysMissionCard(
+    state: com.example.domain.PersonalState,
+    nextAction: com.example.domain.NextActionEngine.Answer?,
+    onCheckIn: () -> Unit,
+    onLogCardio: () -> Unit,
+) {
+    var showWhy by remember { mutableStateOf(false) }
+    val d = state.decision
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text(
+                "TODAY'S MISSION",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                d.topPriority,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "Readiness: ${readinessLabel(d.readiness.level)}  ·  Confidence: ${confidenceLabel(d.confidence)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+
+            nextAction?.let { na ->
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "RIGHT NOW",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    na.action,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                na.detail?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            MissionLine("Training", trainingLine(d.training))
+            MissionLine(
+                "Cardio",
+                if (d.cardio.mode == com.example.domain.Cardio.Mode.NONE) "None today"
+                else "${com.example.domain.Cardio.label(d.cardio.mode)}${d.cardio.minutes?.let { " — $it min" } ?: ""}",
+            )
+            if (d.cardio.mode != com.example.domain.Cardio.Mode.NONE && d.cardio.effort.isNotBlank()) {
+                Text(
+                    d.cardio.effort,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { showWhy = !showWhy }) {
+                    Text(if (showWhy) "Hide why" else "Why?", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+                if (state.readiness.confidence == com.example.domain.ReadinessEngine.Confidence.INSUFFICIENT ||
+                    state.readiness.confidence == com.example.domain.ReadinessEngine.Confidence.LOW
+                ) {
+                    TextButton(onClick = onCheckIn) {
+                        Text("Check in", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+                if (d.cardio.mode != com.example.domain.Cardio.Mode.NONE) {
+                    TextButton(onClick = onLogCardio) {
+                        Text("Log cardio", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+            }
+
+            if (showWhy) {
+                Spacer(modifier = Modifier.height(4.dp))
+                val why = (d.training.reasons + d.cardio.reasons).distinct()
+                if (why.isEmpty()) {
+                    Text(
+                        "There isn't enough logged history yet to give a specific reason — this is the conservative default while the app learns your patterns.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                } else {
+                    why.forEach { reason ->
+                        Text(
+                            "✓ ${reason.replaceFirstChar { it.uppercase() }}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MissionLine(label: String, value: String) {
+    Row(modifier = Modifier.padding(vertical = 2.dp)) {
+        Text(
+            "$label: ",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+    }
+}
+
+private fun trainingLine(t: com.example.domain.DailyDecisionEngine.TrainingDecision): String = when (t.choice) {
+    com.example.domain.DailyDecisionEngine.TrainingChoice.REST -> "Full rest day"
+    com.example.domain.DailyDecisionEngine.TrainingChoice.RECOVERY_SESSION -> "Recovery only — nothing hard"
+    com.example.domain.DailyDecisionEngine.TrainingChoice.REDUCED_SESSION -> "${t.focusLabel} (reduced)"
+    com.example.domain.DailyDecisionEngine.TrainingChoice.FULL_SESSION -> t.focusLabel
+}
+
+private fun readinessLabel(level: com.example.domain.ReadinessEngine.Level): String = when (level) {
+    com.example.domain.ReadinessEngine.Level.EXCELLENT -> "Excellent"
+    com.example.domain.ReadinessEngine.Level.GOOD -> "Good"
+    com.example.domain.ReadinessEngine.Level.MODERATE -> "Moderate"
+    com.example.domain.ReadinessEngine.Level.LOW -> "Low"
+    com.example.domain.ReadinessEngine.Level.VERY_LOW -> "Very low"
+    com.example.domain.ReadinessEngine.Level.INSUFFICIENT_DATA -> "Not enough data yet"
+}
+
+private fun confidenceLabel(c: com.example.domain.ReadinessEngine.Confidence): String = when (c) {
+    com.example.domain.ReadinessEngine.Confidence.HIGH -> "High"
+    com.example.domain.ReadinessEngine.Confidence.MODERATE -> "Moderate"
+    com.example.domain.ReadinessEngine.Confidence.LOW -> "Low"
+    com.example.domain.ReadinessEngine.Confidence.INSUFFICIENT -> "Insufficient"
 }
 
 @Composable
