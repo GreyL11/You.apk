@@ -54,7 +54,7 @@ fun DashboardScreen(
         
         Spacer(modifier = Modifier.height(24.dp))
 
-        state.healthSnapshot?.let { HealthSnapshotCard(it, state.pushPullReading) }
+        state.healthSnapshot?.let { HealthSnapshotCard(it, state.pushPullReading, state.goalGap) }
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
@@ -139,6 +139,7 @@ fun DashboardScreen(
 private fun HealthSnapshotCard(
     snapshot: com.example.domain.HealthStateEngine.Snapshot,
     pushPull: com.example.domain.TrainingCoverageEngine.PushPullReading?,
+    goalGap: com.example.domain.GoalGapEngine.Reading?,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -148,6 +149,15 @@ private fun HealthSnapshotCard(
         Column(modifier = Modifier.padding(20.dp)) {
             Text("TODAY", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Spacer(modifier = Modifier.height(12.dp))
+            goalGap?.bottleneck?.let { bottleneck ->
+                Text(
+                    "Primary focus: ${bottleneckLabel(bottleneck)}",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
             HealthStateRow("Nutrition", snapshot.nutrition)
             HealthStateRow("Hydration", snapshot.hydration)
             HealthStateRow("Sleep", snapshot.sleep)
@@ -167,6 +177,15 @@ private fun HealthSnapshotCard(
             }
         }
     }
+}
+
+private fun bottleneckLabel(dimension: com.example.domain.GoalGapEngine.Dimension): String = when (dimension) {
+    com.example.domain.GoalGapEngine.Dimension.TRAINING_CONSISTENCY -> "Training consistency"
+    com.example.domain.GoalGapEngine.Dimension.NUTRITION_CONSISTENCY -> "Nutrition logging"
+    com.example.domain.GoalGapEngine.Dimension.SLEEP_CONSISTENCY -> "Sleep"
+    com.example.domain.GoalGapEngine.Dimension.RECOVERY -> "Recovery"
+    com.example.domain.GoalGapEngine.Dimension.HYDRATION -> "Hydration"
+    com.example.domain.GoalGapEngine.Dimension.SKIN_ROUTINE -> "Skin routine"
 }
 
 @Composable

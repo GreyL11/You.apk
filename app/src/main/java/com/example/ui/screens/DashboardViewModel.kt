@@ -6,8 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import com.example.domain.Coach
 import com.example.domain.EXERCISES
+import com.example.domain.GoalGapEngine
 import com.example.domain.HealthStateEngine
+import com.example.domain.RecoveryEngine
 import com.example.domain.TrainingCoverageEngine
+import com.example.domain.TrainingLoadEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -45,6 +48,7 @@ data class DashboardUiState(
     val filteredStrengthProgress: List<StrengthProgress> = emptyList(),
     val healthSnapshot: HealthStateEngine.Snapshot? = null,
     val pushPullReading: TrainingCoverageEngine.PushPullReading? = null,
+    val goalGap: GoalGapEngine.Reading? = null,
 )
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -99,6 +103,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 ),
             )
             val pushPullReading = TrainingCoverageEngine.pushPullBalance(logs)
+            val loadReading = TrainingLoadEngine.evaluate(logs, nowDayKey = dayKey)
+            val recoveryReading = RecoveryEngine.evaluate(healthSnapshot.sleep, loadReading.state)
+            val goalGap = GoalGapEngine.evaluate(healthSnapshot, recoveryReading)
 
 
             // 1. Process Weight History
@@ -164,6 +171,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 strengthProgress = strengthList,
                 healthSnapshot = healthSnapshot,
                 pushPullReading = pushPullReading,
+                goalGap = goalGap,
             )
             _uiState.value = initialState
             setTimeRange(initialState.selectedTimeRange)
