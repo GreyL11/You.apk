@@ -425,7 +425,7 @@ fun MoodSheet(
 }
 
 /** Every exercise in the real catalogue, so picking one is never limited to squat/bench —
- *  the prior hardcoded two-button row (matching what LiveSessionScreen used to assume) is gone;
+ *  the prior hardcoded two-button row is gone;
  *  the picker and the live session now read from the same `Exercises.EXERCISES` source. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -456,10 +456,11 @@ private fun ExercisePicker(selected: String, onSelect: (String) -> Unit) {
 @Composable
 fun WorkoutSheet(
     onDismiss: () -> Unit,
-    onStartLiveSession: (exId: String) -> Unit,
     onManualLog: (exId: String, reps: Int, load: Double, difficulty: Int?) -> Unit
 ) {
-    var isManualMode by remember { mutableStateOf(false) }
+    // Straight into the form: there is no camera path to choose between any more, so a mode
+    // selector would be a menu with one item on it.
+    var isManualMode by remember { mutableStateOf(true) }
     var isSaving by remember { mutableStateOf(false) }
     var repsStr by remember { mutableStateOf("") }
     var loadStr by remember { mutableStateOf("") }
@@ -516,24 +517,6 @@ fun WorkoutSheet(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Save Manual Log")
-                }
-            } else {
-                Text("Start a live session to track your reps automatically, or enter them manually.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-
-                ExercisePicker(selectedEx) { selectedEx = it }
-
-                Button(
-                    onClick = { onStartLiveSession(selectedEx) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Start Live Session (Camera)")
-                }
-
-                OutlinedButton(
-                    onClick = { isManualMode = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Manual Workout Logging")
                 }
             }
             Spacer(modifier = Modifier.height(24.dp))

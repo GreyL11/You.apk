@@ -214,6 +214,194 @@ ${MealParse.foodCatalogue()}
         }
     }
 
+    /**
+     * Absent-means-absent readers.
+     *
+     * `optInt`/`optDouble` return 0.0 for a field the model omitted, which is precisely the silent
+     * default [TextLog] exists to prevent: a missing soreness rating would arrive as a real 0 rather
+     * than as "not answered". These return null instead, so an omission stays an omission.
+     */
+    private fun JSONObject.optIntOrNull(key: String): Int? =
+        if (has(key) && !isNull(key)) optInt(key) else null
+
+    private fun JSONObject.optDoubleOrNull(key: String): Double? =
+        if (has(key) && !isNull(key)) optDouble(key).takeIf { !it.isNaN() } else null
+
+    /**
+     * Reads a free-text description of a whole day — a session, cardio, food, how they felt — into
+     * the rows the app already stores. See [TextLog] for why translation-with-a-validator is a
+     * containable use of a model and calorie-guessing is not.
+     *
+     * The SCHEMA does the structural work (the model cannot reply with prose) and [TextLog.validate]
+     * does the semantic work, throwing away any exercise id, cardio mode or out-of-range rating that
+     * is not real. Returns null on no key, HTTP failure, or a body that is not the promised shape.
+     */
+    suspend fun parseTextLog(text: String): TextLogResult? {
+        fun int() = JSONObject().apply { put("type", "INTEGER") }
+        fun num() = JSONObject().apply { put("type", "NUMBER") }
+        fun str() = JSONObject().apply { put("type", "STRING") }
+
+        // Nothing is `required` except the ids: a person who did not mention their stress level must
+        // produce an absent field, not a zero. TextLog.validate reads absent as "not answered".
+        val schema = JSONObject().apply {
+            put("type", "OBJECT")
+            put(
+                "properties",
+                JSONObject().apply {
+                    put(
+                        "sets",
+                        JSONObject().apply {
+                            put("type", "ARRAY")
+                            put(
+                                "items",
+                                JSONObject().apply {
+                                    put("type", "OBJECT")
+                                    put(
+                                        "properties",
+                                        JSONObject().apply {
+                                            put("exId", str()); put("sets", int()); put("reps", int())
+                                            put("load", num()); put("difficulty", int())
+                                        },
+                                    )
+                                    put("required", JSONArray().apply { put("exId") })
+                                },
+                            )
+                        },
+                    )
+                    put(
+                        "cardio",
+                        JSONObject().apply {
+                            put("type", "ARRAY")
+                            put(
+                                "items",
+                                JSONObject().apply {
+                                    put("type", "OBJECT")
+                                    put(
+                                        "properties",
+                                        JSONObject().apply {
+                                            put("mode", str()); put("minutes", int()); put("effortRating", int())
+                                        },
+                                    )
+                                    put("required", JSONArray().apply { put("mode") })
+                                },
+                            )
+                        },
+                    )
+                    put(
+                        "meals",
+                        JSONObject().apply {
+                            put("type", "ARRAY")
+                            put(
+                                "items",
+                                JSONObject().apply {
+                                    put("type", "OBJECT")
+                                    put(
+                                        "properties",
+                                        JSONObject().apply { put("foodId", str()); put("servings", num()) },
+                                    )
+                                    put("required", JSONArray().apply { put("foodId"); put("servings") })
+                                },
+                            )
+                        },
+                    )
+                    put(
+                        "checkIn",
+                        JSONObject().apply {
+                            put("type", "OBJECT")
+                            put(
+                                "properties",
+                                JSONObject().apply {
+                                    put("energy", int()); put("soreness", int()); put("stress", int())
+                                    put("mood", int()); put("refreshed", JSONObject().apply { put("type", "BOOLEAN") })
+                                },
+                            )
+                        },
+                    )
+                    put("weightKg", num())
+                },
+            )
+        }
+
+        val system = """
+You convert a person's own description of their day into structured log entries. You are a
+transcriber, not a coach and not a nutritionist.
+
+Absolute rules:
+- exId MUST be copied exactly from the exercise list below. If they name a lift that is not on the list, leave that entry out — do not substitute the nearest thing and do not invent an id.
+- mode MUST be copied exactly from the cardio list below. Pick by what they described: a walk is EASY_WALK, a steady jog or treadmill session is AEROBIC_BASE, sprints or HIIT is INTERVALS.
+- foodId MUST be copied exactly from the food list below. Same rule: not on the list means leave it out.
+- ONLY record what they actually said. This is the most important rule. If they did not mention their stress, omit stress entirely. Do not fill a field with a middle value because it is missing — an omitted field is recorded as "not answered", and a guess would become a permanent fake data point.
+- Never infer one thing from another. "Tired" is not an energy rating. "Hard session" is not a soreness score. Only a number or an explicit statement counts.
+- difficulty and effortRating are 1 (easy), 2 (moderate), 3 (hard) — only if they described how hard it was.
+- energy, soreness, stress and mood are 1..10, only if they gave a number or an unambiguous equivalent.
+- refreshed: true only if they said they woke up well, false only if they said they did not.
+- load is the weight per set in kg. Omit it for bodyweight work.
+- Never calculate calories, macros, volume or totals. The app computes all of that itself from these rows.
+- If the text contains nothing loggable, return empty arrays and omit checkIn.
+
+EXERCISES (id = name (group)):
+${TextLog.exerciseCatalogue()}
+
+CARDIO MODES (mode = meaning):
+${TextLog.cardioCatalogue()}
+
+FOODS (id = name (serving)):
+${MealParse.foodCatalogue()}
+        """.trimIndent()
+
+        val raw = generateContent(
+            prompt = text,
+            systemInstruction = system,
+            responseMimeType = "application/json",
+            responseSchema = schema,
+        ) ?: return null
+
+        return try {
+            val o = JSONObject(raw)
+
+            val setsArr = o.optJSONArray("sets")
+            val rawSets = (0 until (setsArr?.length() ?: 0)).mapNotNull { i ->
+                val s = setsArr!!.optJSONObject(i) ?: return@mapNotNull null
+                val id = s.optString("exId").ifEmpty { return@mapNotNull null }
+                TextLog.RawSet(
+                    exId = id,
+                    sets = s.optIntOrNull("sets"),
+                    reps = s.optIntOrNull("reps"),
+                    load = s.optDoubleOrNull("load"),
+                    difficulty = s.optIntOrNull("difficulty"),
+                )
+            }
+
+            val cardioArr = o.optJSONArray("cardio")
+            val rawCardio = (0 until (cardioArr?.length() ?: 0)).mapNotNull { i ->
+                val c = cardioArr!!.optJSONObject(i) ?: return@mapNotNull null
+                val mode = c.optString("mode").ifEmpty { return@mapNotNull null }
+                TextLog.RawCardio(mode, c.optIntOrNull("minutes"), c.optIntOrNull("effortRating"))
+            }
+
+            val mealsArr = o.optJSONArray("meals")
+            val rawMeals = (0 until (mealsArr?.length() ?: 0)).mapNotNull { i ->
+                val m = mealsArr!!.optJSONObject(i) ?: return@mapNotNull null
+                val id = m.optString("foodId").ifEmpty { return@mapNotNull null }
+                id to m.optDouble("servings", 0.0)
+            }
+
+            val ci = o.optJSONObject("checkIn")?.let { c ->
+                TextLog.RawCheckIn(
+                    energy = c.optIntOrNull("energy"),
+                    soreness = c.optIntOrNull("soreness"),
+                    stress = c.optIntOrNull("stress"),
+                    mood = c.optIntOrNull("mood"),
+                    refreshed = if (c.has("refreshed") && !c.isNull("refreshed")) c.optBoolean("refreshed") else null,
+                )
+            }
+
+            TextLog.validate(rawSets, rawCardio, ci, rawMeals, o.optDoubleOrNull("weightKg"))
+        } catch (e: org.json.JSONException) {
+            null
+        }
+    }
+
     private companion object {
         val EXPLAIN_SYSTEM = """
 You explain one decision this app already made, to the person it was made about.

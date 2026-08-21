@@ -190,6 +190,41 @@ Expect `user_version` = 3.
 
 **Not yet exercised on device at all:** the new UI paths — Today's Mission card, `CheckInSheet`, `CardioSheet`, the "Why?" expansion, and the difficulty prompt on manual workout logging. Installed and reachable, but never tapped.
 
+---
+
+## 12. Pivot: typed logging replaces the camera coach (2026-08-21, IN PROGRESS)
+
+**Why.** Direct user verdict: *"this app is waste i cant use it in irl i cant log everything i do in gym."* That is a correct read of a real design failure. The closed-loop coach in section 11 is only as good as its inputs, and it was built on per-set structured entry plus a camera session — neither of which anyone does mid-workout. The engines were fine; the way data got in was the problem.
+
+**Direction.** Remove the camera gym coach. Log by typing what you did, in plain words, and let the app extract the structured rows.
+
+### Status
+
+| Piece | Status | Notes |
+|---|---|---|
+| Camera gym coach removed | **COMPLETE** | `LiveSessionScreen`, `PoseAnalyzer`, `MovementEngine`, `FormBaseline` + their tests deleted; ML Kit pose deps dropped; nav route, `WorkoutSheet` camera path, and `TodayViewModel` fault plumbing all unwired. Zero dangling references (grep-verified). |
+| `TextLog.kt` validator | **COMPLETE** | Validates model output against the real `EXERCISES` / `Cardio.Mode` / `Nutrition.FOODS` catalogues and real ranges. Same containment discipline as `MealParse`. |
+| `GeminiClient.parseTextLog` | **COMPLETE** | Schema-constrained extraction into `TextLogResult`. Includes `optIntOrNull`/`optDoubleOrNull` so an omitted field stays null instead of arriving as a real `0`. |
+| `TextLogTest.kt` | **COMPLETE** | 20 tests, mostly about what it *refuses*: invented exercise ids, reps-less sets, out-of-scale ratings, absurd loads, `NONE` cardio, implausible bodyweight. |
+| **Wiring into chat UI** | **NOT STARTED** | `parseTextLog` has **zero callers**. This is the piece that makes the feature usable, and it is not built. |
+| Writing parsed rows to Room | **NOT STARTED** | No `logTextEntry` on `TodayViewModel` yet. Nothing typed can currently be saved. |
+| Dashboard / monitor surface | **NOT STARTED** | Requested; not begun. |
+| **Compilation** | **UNVERIFIED** | Not compiled since the camera removal. Section 11's green 350-test run predates all of section 12. |
+
+### Honest summary
+
+The camera coach is genuinely gone and the extraction engine genuinely exists and is tested. **But typed logging does not work yet** — nothing calls the parser, and there is no path from typed text to a stored row. The user-visible behaviour today is the old app minus the camera, which is *worse* than before this pivot started, until the wiring lands.
+
+One real compile error was introduced and fixed during the removal: `FaultEvent` was declared inside the deleted `MovementEngine.kt` while `Coach.faultEventsOf` still referenced it. That function had zero callers, so it was removed rather than re-declaring a type nothing needed. `Coach.faultCountOf` stays (it is still called, and still tested) and now always reads `"[]"` → 0 faults, which makes `isExecutionClean` always true. That is the intended honest degradation: no camera means no execution evidence, not invented execution evidence — progression now rests on reps hit plus reported difficulty.
+
+### Next steps, in order
+
+1. `TodayViewModel.logTextEntry(result: TextLogResult)` — write sets/cardio/check-in/meals/weight to the existing DAOs, reusing `logTraining`, `logCardio`, `logCheckIn`, `logFoods`, `logWeight`.
+2. Wire `parseTextLog` into `TalkViewModel.sendMessage`: parse first, and if anything loggable comes back, log it and reply with `TextLog.summary(...)`; otherwise fall through to the existing chat answer.
+3. Show a confirm step before writing, matching `MealSheet`'s existing discipline (nothing is stored until it has been seen).
+4. Dashboard/monitor surface for what has been logged.
+5. Compile and run the suite — nothing in section 12 has been through a compiler.
+
 ### Schema change (v2 → v3)
 
 `log_entry.difficulty`, and `day_row.energy` / `soreness` / `stress` / `refreshed`. All nullable, **no `DEFAULT`** — deliberately, so every pre-existing row reads as "not answered" rather than acquiring a neutral score the person never gave. `ReadinessEngine` distinguishes absent from average, so a default would have manufactured evidence for every historical day.

@@ -30,7 +30,6 @@ import com.example.ui.screens.TalkScreen
 import com.example.ui.screens.FaceScanScreen
 import com.example.ui.screens.FaceScanResultScreen
 import com.example.ui.screens.FaceHistoryScreen
-import com.example.ui.screens.LiveSessionScreen
 import com.example.ui.screens.OnboardingScreen
 import com.example.data.SettingsManager
 import com.example.ui.screens.WeeklyReviewScreen
@@ -151,7 +150,7 @@ fun MainScreen(startDestination: String = "home") {
                     if (selectedTab == "today") {
                         TodayScreen(
                             onNavigateToWeeklyReview = { navController.navigate("weeklyReview") },
-                            onNavigateToLiveSession = { exId -> navController.navigate("liveSession/$exId") },
+                            onNavigateToChat = { navController.navigate("chat") },
                             openActionId = tappedActionId
                         )
                     } else {
@@ -163,16 +162,6 @@ fun MainScreen(startDestination: String = "home") {
                     }
                 }
             }
-        }
-
-        composable(
-            "liveSession/{exId}",
-            arguments = listOf(androidx.navigation.navArgument("exId") { defaultValue = "squat" }),
-        ) { backStackEntry ->
-            LiveSessionScreen(
-                exId = backStackEntry.arguments?.getString("exId") ?: "squat",
-                onBack = { navController.popBackStack() },
-            )
         }
 
         composable("chat") {

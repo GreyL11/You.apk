@@ -5,7 +5,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import com.example.domain.Coach
-import com.example.domain.FaultEvent
 import com.example.domain.HealthCoachEngine
 import com.example.domain.Planner
 import com.example.domain.TrainingProfile
@@ -398,19 +397,18 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * @param faultEvents real per-rep fault events from a live camera session (MovementEngine),
-     *  if this session had one. Manual entry (no camera) supplies none — `faultCount` alone then
-     *  describes a session with no per-rep detail, which is honest (there genuinely is none),
-     *  never a fabricated breakdown.
      * @param profile drives plate-snapped progression (Coach/Planner); defaults to legacy's own
      *  DEFAULT_PROFILE-equivalent fallback since no screen currently writes the Profile table.
+     *
+     * `faultEvents` on the stored row is always "[]" now that pose analysis is gone, so
+     * [Coach.isExecutionClean] always reads a session as clean and progression rests entirely on
+     * reps hit and reported [difficulty]. That is the honest degradation: no camera means no
+     * execution evidence, not invented execution evidence.
      */
     fun logTraining(
         exId: String,
         reps: Int,
         load: Double,
-        faultCount: Int = 0,
-        faultEvents: List<FaultEvent> = emptyList(),
         profile: TrainingProfile = TrainingProfile(),
         /** 1 (easy) .. 3 (hard) as reported. Null when not asked — the adaptive loop reads this to
          *  decide whether progression is defensible, so a guessed value would corrupt it. */
@@ -419,7 +417,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val now = LocalDateTime.now()
             val history = db.logEntryDao().getHistorySync(exId)
-            val effectiveFaultCount = if (faultEvents.isNotEmpty()) faultEvents.size else faultCount
 
             // What today's plan asked of this lift. Without it, Coach cannot tell "missed the reps"
             // from "form broke down", and a clean 3-of-15 would earn a weight increase. Null when the
@@ -432,7 +429,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                 history = history,
                 currentReps = reps,
                 currentLoad = load,
-                currentFaultCount = effectiveFaultCount,
+                currentFaultCount = 0,
                 exId = exId,
                 profile = profile,
                 targetReps = targetReps,
@@ -445,9 +442,9 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                     reps = reps,
                     sets = 1,
                     load = load,
-                    // Real {rep,id} pairs when a live session supplied them, matching legacy's
-                    // faultEvents shape — never a placeholder "[{}]" standing in for a count.
-                    faultEvents = faultEvents.joinToString(",", "[", "]") { "{\"rep\":${it.rep},\"id\":\"${it.faultId}\"}" },
+                    // No pose analysis any more, so there is genuinely no per-rep execution detail
+                    // to record. Empty is the truthful value; Coach reads it as a clean session.
+                    faultEvents = "[]",
                     correctedFrom = null,
                     difficulty = difficulty,
                 ),
@@ -469,7 +466,7 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
                     from = if (progression.unit == Coach.Unit.REPS) reps.toDouble() else load,
                     to = progression.nextLoad,
                     reason = progression.reason,
-                    evidence = "{\"faultCount\":$effectiveFaultCount,\"estimated1RM\":${progression.estimated1RM}}",
+                    evidence = "{\"estimated1RM\":${progression.estimated1RM}}",
                 ),
             )
 
@@ -502,15 +499,6 @@ class TodayViewModel(application: Application) : AndroidViewModel(application) {
      * a connected smart scale — the app could compute the correction and had no way to be given the
      * measurement it corrects from.
      */
-    /**
-     * The efficiency faults this lifter has been shown to simply do on this lift, so the live screen
-     * can stop cueing them. Safety faults are never included — see [com.example.domain.FormBaseline].
-     */
-    suspend fun habitualFaultIds(exId: String): Set<String> {
-        val history = db.logEntryDao().getHistorySync(exId)
-        return com.example.domain.FormBaseline.habitualFaults(history, exId).map { it.faultId }.toSet()
-    }
-
     /** Cutting, holding or gaining. Changes the target and what the scale is checked against. */
     fun setPhase(phase: Nutrition.Phase) {
         viewModelScope.launch {

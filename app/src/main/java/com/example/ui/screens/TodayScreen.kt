@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
 @Composable
 fun TodayScreen(
     onNavigateToWeeklyReview: () -> Unit = {},
-    onNavigateToLiveSession: (exId: String) -> Unit = {},
+    onNavigateToChat: () -> Unit = {},
     /** The action a notification was tapped for, so the tap lands on the thing it asked about. */
     openActionId: String? = null,
     viewModel: TodayViewModel = viewModel(factory = androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.getInstance(LocalContext.current.applicationContext as Application))
@@ -102,10 +102,6 @@ fun TodayScreen(
     if (showWorkoutSheet) {
         WorkoutSheet(
             onDismiss = { showWorkoutSheet = false },
-            onStartLiveSession = { exId ->
-                showWorkoutSheet = false
-                onNavigateToLiveSession(exId)
-            },
             onManualLog = { exId, reps, load, difficulty ->
                 // Without the real profile, Coach's plate-snapped progression silently used the
                 // default plate set for every user regardless of what they actually own.
@@ -264,13 +260,7 @@ fun TodayScreen(
                     icon = Icons.Filled.FitnessCenter,
                     title = if (state.hasCompletedTraining || uncompleted == null) "Workout Completed" else "Today's Workout: $trainingTitle",
                     subtitle = if (state.hasCompletedTraining || uncompleted == null) "Great job today!" else "${state.todayTraining!!.exercises.size} exercises planned",
-                    onClick = {
-                        if (uncompleted != null) {
-                            onNavigateToLiveSession(uncompleted.exId)
-                        } else {
-                            showWorkoutSheet = true
-                        }
-                    },
+                    onClick = { showWorkoutSheet = true },
                     buttonText = if (state.hasCompletedTraining || uncompleted == null) "Log Extra" else "Start Session",
                     color = MaterialTheme.colorScheme.tertiaryContainer,
                     onColor = MaterialTheme.colorScheme.onTertiaryContainer
@@ -280,7 +270,7 @@ fun TodayScreen(
                 state.todayTraining!!.exercises.forEach { ex ->
                     val isDone = state.todayLogEntries.any { log -> log.exId == ex.exId }
                     Card(
-                        modifier = Modifier.fillMaxWidth().clickable { onNavigateToLiveSession(ex.exId) },
+                        modifier = Modifier.fillMaxWidth().clickable { showWorkoutSheet = true },
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {
                         Row(

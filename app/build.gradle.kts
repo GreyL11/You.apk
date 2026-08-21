@@ -90,8 +90,6 @@ dependencies {
   implementation(libs.androidx.camera.core)
   implementation(libs.androidx.camera.lifecycle)
   implementation(libs.androidx.camera.view)
-  implementation("com.google.mlkit:pose-detection:17.0.0")
-  implementation("com.google.mlkit:pose-detection-accurate:17.0.0")
   // face-detection: removed. FaceAnalyzer now runs on MediaPipe's FaceLandmarker (already a
   // dependency, see mediapipe.tasks.vision below) for real 478-point landmarks instead of ML Kit's
   // bounding box and Euler angles — the only thing this library was doing in the app.

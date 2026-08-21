@@ -27,7 +27,9 @@ data class LogEntry(
     val reps: Int,
     val sets: Int?,
     val load: Double,
-    val faultEvents: String, // JSON List<FaultEvent>
+    /** Legacy column from the removed pose-analysis feature. Always "[]" now; kept rather than
+     *  migrated away, since dropping a column costs a migration and buys nothing. */
+    val faultEvents: String,
     val correctedFrom: Int?,
     /** Real user-reported difficulty for this set, 1 (easy) .. 3 (hard) -- null means not asked/
      *  answered, never a guessed "moderate". The only input ReadinessEngine/progression logic has

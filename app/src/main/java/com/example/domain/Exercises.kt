@@ -537,7 +537,7 @@ fun cameraCheck(leftShoulder: Pt?, rightShoulder: Pt?, leftHip: Pt?, rightHip: P
 
 // ── movement-engine constants — direct port of exercises.js's step()-adjacent constants ────
 // Landmarks are assumed pre-smoothed (legacy's filter.js One-Euro pass) before this second,
-// lighter EMA on the primary angle — see MovementEngine.kt's own header for the smoothing gap
+// lighter EMA on the primary angle (pose analysis has since been removed)
 // this port carries (no One-Euro equivalent is wired to ML Kit's raw landmarks yet).
 const val EMA_ALPHA = 0.6
 const val HYSTERESIS = 12.0   // degrees of slop around each rep endpoint

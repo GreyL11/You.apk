@@ -95,25 +95,6 @@ object Coach {
     }
 
     /**
-     * The individual fault events a session recorded, as {rep, id} pairs.
-     *
-     * Lives here beside [faultCountOf] so the stored JSON has exactly one reader: two parsers of the
-     * same column is how a count and a breakdown of that same count drift apart. An entry whose
-     * events are unparseable, or whose objects are missing the `id` written by
-     * `TodayViewModel.logTraining`, yields nothing rather than a partially-invented list.
-     */
-    fun faultEventsOf(entry: LogEntry): List<FaultEvent> = try {
-        val arr = JSONArray(entry.faultEvents)
-        (0 until arr.length()).mapNotNull { i ->
-            val o = arr.optJSONObject(i) ?: return@mapNotNull null
-            val id = o.optString("id").ifEmpty { return@mapNotNull null }
-            FaultEvent(rep = o.optInt("rep", 0), faultId = id)
-        }
-    } catch (e: JSONException) {
-        emptyList()
-    }
-
-    /**
      * @param targetReps what the session was supposed to hit. Null means the caller has no plan to
      *   compare against, and is treated as "reps hit" — inventing a target would fabricate the "reps
      *   missed" verdict rather than withhold it.
