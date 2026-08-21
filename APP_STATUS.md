@@ -157,7 +157,7 @@ The app could already observe, remember and explain. It could not **decide**. Tr
 | Today's Mission UI | **COMPLETE** | Readiness + confidence + training/cardio decisions + expandable "Why?". |
 | Check-in / cardio / difficulty capture | **COMPLETE** | `CheckInSheet`, `CardioSheet`, optional difficulty on manual workout logging. |
 | Schema v3 migration | **COMPLETE** | Real `MIGRATION_2_3`; no destructive fallback. |
-| **On-device verification** | **BLOCKED** | Phone not connected (`adb devices` empty, `installDebug` → "No connected devices!"). Nothing in this section has run on real hardware. |
+| **On-device verification** | **PARTIAL** | Installs and launches clean on the real device — see "On-device status" below. Migration proven not to throw; resulting schema not yet inspected. |
 | Gemini wording layer for these decisions | **NOT STARTED** | Decisions are surfaced as engine-authored text. The `Digest`/`Claims`/`Validate`/`Explain` layer is not yet wired to them. |
 
 ### Safety floors, each covered by a test
@@ -169,13 +169,34 @@ The app could already observe, remember and explain. It could not **decide**. Tr
 - Progression requires **both** real readiness **and** no recent too-hard feedback — either alone is insufficient.
 - A pattern trained within 2 days is never re-prescribed as today's focus.
 
+### On-device status (2026-08-21, Motorola Edge 60 Pro `ZA222ZXDFJ`)
+
+**Verified:**
+- `./gradlew installDebug` → `Installed on 1 device`, `BUILD SUCCESSFUL`.
+- App launched via `monkey`; process alive afterward (pid 4570).
+- `logcat` clean — no `FATAL`, no `AndroidRuntime` crash, no Room/SQLite/migration exception.
+
+**What that does and does not prove.** It proves `MIGRATION_2_3` **ran without throwing against the real populated database** — the strongest single signal available, since Room throws `IllegalStateException` on first DB access if a migration is missing or fails, which would have killed the process. It does **not** prove the resulting schema is correct in detail: the phone was disconnected before the column list could be read, so it is still unconfirmed that all five new columns (`log_entry.difficulty`, `day_row.energy`/`soreness`/`stress`/`refreshed`) landed with the right types and nullability.
+
+**To finish this check** (device connected; `sqlite3` is not present on this device, so the DB must be pulled):
+
+```bash
+PKG=com.aistudio.trainer.qmwzrt
+adb exec-out run-as $PKG cat /data/data/$PKG/databases/gym_trainer_database > db.sqlite
+python -c "import sqlite3;c=sqlite3.connect('db.sqlite');print(c.execute('PRAGMA user_version').fetchone());[print(r) for r in c.execute('PRAGMA table_info(day_row)')]"
+```
+
+Expect `user_version` = 3.
+
+**Not yet exercised on device at all:** the new UI paths — Today's Mission card, `CheckInSheet`, `CardioSheet`, the "Why?" expansion, and the difficulty prompt on manual workout logging. Installed and reachable, but never tapped.
+
 ### Schema change (v2 → v3)
 
 `log_entry.difficulty`, and `day_row.energy` / `soreness` / `stress` / `refreshed`. All nullable, **no `DEFAULT`** — deliberately, so every pre-existing row reads as "not answered" rather than acquiring a neutral score the person never gave. `ReadinessEngine` distinguishes absent from average, so a default would have manufactured evidence for every historical day.
 
 ### Known limitations — stated plainly
 
-1. **Not run on a device.** Unit-tested and compiling, but zero hardware verification. The v3 migration in particular has never executed against a real populated database.
+1. **Partially verified on device.** Installs, launches, and survives — so the v3 migration demonstrably ran against the real populated database without throwing. Still unverified: the resulting column list, and every new UI surface (nothing has been tapped).
 2. **Cold start is honest but thin.** `difficulty` and the check-in fields did not exist before 2026-08-21, so no historical row has them. Expect `LOW`/`INSUFFICIENT` confidence and conservative defaults until several days of real check-ins accumulate. This is correct behaviour, not a bug.
 3. **Cardio base bands are unvalidated thresholds.** The 50 / 120 aerobic-min-per-week boundaries between BEGINNER/DEVELOPING/ESTABLISHED are reasonable coaching heuristics, not fitted to this person's data or to a cited source.
 4. **`Planner` still generates the actual exercise list.** `DailyDecisionEngine` decides the movement-pattern *focus*, but the concrete lifts still come from `Planner`'s split, which is not yet pattern-aware. The focus decision is therefore advisory over the session content — the largest remaining gap in this section.
